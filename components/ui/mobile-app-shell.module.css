@@ -1,0 +1,279 @@
+.preview {
+  min-width: 0;
+  background: var(--background);
+}
+
+.shell {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --tab-lift: 0px;
+  --toolbar-space: var(--safe-top);
+  --footer-space: var(--safe-bottom);
+  --glass-fill: var(--background);
+  --glass-shadow:
+    inset 0 0 0 1px color-mix(in oklab, var(--foreground) 9%, transparent),
+    0 3px 8px color-mix(in oklab, var(--foreground) 9%, transparent),
+    0 8px 18px color-mix(in oklab, var(--foreground) 7%, transparent);
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+  overflow: hidden;
+  color: var(--foreground);
+  background: var(--background);
+}
+
+.shell[data-toolbar] { --toolbar-space: calc(60px + var(--safe-top)); }
+.shell[data-footer="tabs"] { --footer-space: calc(96px + var(--safe-bottom) + var(--tab-lift)); }
+.shell[data-footer="action"] { --footer-space: calc(80px + var(--safe-bottom)); }
+
+.content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  overscroll-behavior-y: contain;
+  padding-block: calc(var(--toolbar-space) + 12px) var(--footer-space);
+  padding-inline: 20px;
+  scroll-padding-block: calc(var(--toolbar-space) + 12px) var(--footer-space);
+}
+
+.toolbar {
+  position: absolute;
+  z-index: 2;
+  inset: 0 0 auto;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr) 44px;
+  align-items: center;
+  min-height: var(--toolbar-space);
+  padding: calc(8px + var(--safe-top)) 16px 8px;
+  background: var(--background);
+}
+
+.leading, .trailing { display: flex; }
+.trailing { justify-content: flex-end; }
+
+.title {
+  overflow: hidden;
+  padding-inline: 8px;
+  font-size: 17px;
+  font-weight: 650;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.toolbar .toolbarButton {
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+}
+
+.toolbar .toolbarButton svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 2.25;
+}
+
+.bottom {
+  position: absolute;
+  z-index: 2;
+  inset: auto 12px 0;
+  display: grid;
+  justify-items: center;
+  padding-bottom: calc(10px + var(--safe-bottom));
+  pointer-events: none;
+}
+
+.bottom > * { pointer-events: auto; }
+.action { width: min(360px, 100%); }
+
+.bottom .tabBar {
+  margin-bottom: var(--tab-lift);
+}
+
+.bottom .tabBar[data-compact="false"] > button {
+  min-height: 50px;
+  gap: 3px;
+  padding-block: 5px;
+}
+
+.bottom .tabBar > button svg { stroke-width: 2.2; }
+
+.toolbar .toolbarButton,
+.bottom .tabBar {
+  background: var(--glass-fill);
+  box-shadow: var(--glass-shadow);
+}
+
+.toolbar .toolbarButton:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+@supports (backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px)) {
+  .toolbar {
+    background: linear-gradient(
+      var(--background) 26%,
+      color-mix(in oklab, var(--background) 88%, transparent) 78%,
+      color-mix(in oklab, var(--background) 58%, transparent)
+    );
+  }
+
+  .toolbar .toolbarButton,
+  .bottom .tabBar {
+    --glass-fill:
+      radial-gradient(ellipse at 20% 0%, color-mix(in oklab, var(--background) 84%, transparent), transparent 62%),
+      color-mix(in oklab, var(--background) 65%, transparent);
+    --glass-shadow:
+      inset 0 1px 2px color-mix(in oklab, var(--background) 96%, transparent),
+      inset 0 0 0 1px color-mix(in oklab, var(--foreground) 7%, transparent),
+      0 3px 8px color-mix(in oklab, var(--foreground) 9%, transparent),
+      0 8px 18px color-mix(in oklab, var(--foreground) 7%, transparent);
+    -webkit-backdrop-filter: blur(15px) saturate(1.8);
+    backdrop-filter: blur(15px) saturate(1.8);
+  }
+}
+
+@media (prefers-reduced-transparency: reduce), (forced-colors: active) {
+  .toolbar, .toolbar .toolbarButton, .bottom .tabBar {
+    background: var(--background);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+}
+
+@media (forced-colors: active) {
+  .toolbar .toolbarButton, .bottom .tabBar { outline: 1px solid ButtonText; }
+  .toolbar .toolbarButton:focus-visible { outline-color: Highlight; }
+}
+
+@media (max-width: 340px) {
+  .content { padding-inline: 14px; }
+}
+
+@media (min-width: 480px) and (max-height: 519px) and (hover: hover) and (pointer: fine) {
+  .preview[data-device-preview] {
+    width: min(444px, 100%);
+    margin-inline: auto;
+  }
+}
+
+@media (min-width: 480px) and (min-height: 520px) and (hover: hover) and (pointer: fine) {
+  .preview[data-device-preview] {
+    --preview-height: calc(100dvh - 24px);
+    position: relative;
+    container-type: inline-size;
+    width: min(444px, calc(100% - 28px), calc(var(--preview-height) * 388 / 790));
+    aspect-ratio: 388 / 790;
+    margin: 12px auto;
+  }
+
+  .preview[data-device-preview]::after {
+    position: absolute;
+    z-index: 3;
+    inset: 0;
+    background: url("./iphone-outline.svg") center / contain no-repeat;
+    pointer-events: none;
+    content: "";
+  }
+
+  .preview[data-device-preview] .shell {
+    --safe-top: clamp(20px, 11cqw, 50px);
+    --safe-bottom: 11px;
+    --tab-lift: 10px;
+    position: absolute;
+    inset: 1.962% 4.768% 2.089%;
+    height: auto;
+    border-radius: 17% / 8.3%;
+  }
+
+  .preview[data-device-preview] .shell::after {
+    position: absolute;
+    z-index: 3;
+    inset: auto 0 8px;
+    width: min(34%, 134px);
+    height: 5px;
+    margin-inline: auto;
+    border-radius: 999px;
+    background: color-mix(in oklab, var(--foreground) 65%, var(--background));
+    pointer-events: none;
+    content: "";
+  }
+}
+
+.screenHeading,
+.imageHeading {
+  font-size: clamp(25px, 7vw, 32px);
+  font-weight: 720;
+  letter-spacing: -.035em;
+  line-height: 1.2;
+  overflow-wrap: anywhere;
+}
+
+.screenHeading { margin: 0 0 20px; }
+
+.listLink,
+.imageCard {
+  --mobile-card-shadow:
+    0 2px 8px color-mix(in oklab, var(--foreground) 3%, transparent),
+    0 6px 22px 2px color-mix(in oklab, var(--foreground) 4%, transparent);
+}
+
+.listLink {
+  display: block;
+  border-radius: var(--radius-card);
+  color: inherit;
+  text-decoration: none;
+  box-shadow: var(--mobile-card-shadow);
+}
+
+.listLink:focus-visible { outline: 2px solid var(--ring); outline-offset: 2px; }
+
+.listRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-weight: 500;
+  overflow-wrap: anywhere;
+}
+
+.listRow svg { flex: none; width: var(--text-icon-size, 1em); height: var(--text-icon-size, 1em); }
+
+@media (hover: hover) and (pointer: fine) {
+  .listLink:hover .listSurface { background: color-mix(in oklab, var(--card), var(--foreground) 6%); }
+}
+
+.listLink:active .listSurface { background: color-mix(in oklab, var(--card), var(--foreground) 8%); }
+
+.imageCard {
+  --tw-shadow: var(--mobile-card-shadow);
+  position: relative;
+  isolation: isolate;
+  justify-content: flex-end;
+  aspect-ratio: 16 / 10;
+  padding: 0;
+  background: #111;
+}
+
+.image {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.imageCard::after {
+  position: absolute;
+  z-index: 1;
+  inset: 0;
+  background: linear-gradient(transparent 32%, rgb(0 0 0 / 72%) 79%, rgb(0 0 0 / 88%));
+  pointer-events: none;
+  content: "";
+}
+
+.imageCaption {
+  position: relative;
+  z-index: 2;
+  display: grid;
+  gap: 6px;
+  color: white;
+}

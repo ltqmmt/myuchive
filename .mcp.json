@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "compass": {
+      "type": "http",
+      "url": "https://compass.designcompass.org/api/mcp",
+      "headers": {
+        "Authorization": "Bearer ${COMPASS_MCP_KEY:-proxy-injected}"
+      }
+    }
+  }
+}

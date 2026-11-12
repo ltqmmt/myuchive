@@ -1,0 +1,6 @@
+.content { overflow: hidden; }
+.content[data-state="open"] { animation: expand 420ms cubic-bezier(.22, 1, .36, 1); }
+.content[data-state="closed"] { animation: collapse 360ms cubic-bezier(.4, 0, .2, 1); }
+@keyframes expand { from { height: 0; opacity: 0; } to { height: var(--radix-accordion-content-height); opacity: 1; } }
+@keyframes collapse { from { height: var(--radix-accordion-content-height); opacity: 1; } to { height: 0; opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .content[data-state] { animation: none; } }

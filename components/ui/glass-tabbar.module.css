@@ -1,0 +1,70 @@
+.bar {
+  --glass-cell: calc((100% - 12px) / var(--glass-count));
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(var(--glass-count), minmax(0, 1fr));
+  width: min(360px, 100%);
+  padding: 6px;
+  border-radius: 999px;
+  corner-shape: round;
+  color: var(--foreground);
+  background: color-mix(in oklab, var(--background) 65%, transparent);
+  backdrop-filter: blur(20px) saturate(1.8);
+  -webkit-backdrop-filter: blur(20px) saturate(1.8);
+  box-shadow: inset 0 1px 1px color-mix(in oklab, white 65%, transparent), inset 0 -1px 1px color-mix(in oklab, var(--foreground) 12%, transparent), 0 8px 28px color-mix(in oklab, black 12%, transparent);
+  touch-action: pan-y;
+  user-select: none;
+  isolation: isolate;
+  flex-shrink: 0;
+  transition: width 360ms cubic-bezier(.22,1,.36,1);
+}
+.lens {
+  position: absolute;
+  top: 6px;
+  bottom: 6px;
+  left: 6px;
+  width: var(--glass-cell);
+  border-radius: 999px;
+  corner-shape: round;
+  background: color-mix(in oklab, var(--foreground) 8%, transparent);
+  box-shadow: none;
+  transform: translateX(calc(var(--glass-index) * 100%));
+  transition: transform 420ms cubic-bezier(.22,1,.36,1);
+  pointer-events: none;
+}
+.item {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-width: 0;
+  min-height: 60px;
+  padding: 8px 4px;
+  border: 0;
+  border-radius: 999px;
+  corner-shape: round;
+  background: transparent;
+  color: var(--muted-foreground);
+  cursor: pointer;
+  transition: min-height 360ms ease, height 360ms ease, gap 360ms ease, color 180ms ease, background-color 160ms ease;
+}
+.item[aria-current] { color: var(--primary); }
+.item:focus-visible { border-radius:999px; corner-shape:round; outline: 2px solid var(--ring); outline-offset: -2px; }
+.item:disabled { opacity: .4; cursor: default; }
+.icon { position: relative; display: grid; place-items: center; transition: transform 250ms ease; }
+.icon > svg { width: 22px; height: 22px; }
+.item[aria-current] .icon { transform: none; }
+.label { font-size: 12px; line-height: 16px; font-weight: 600; max-height: 16px; opacity: 1; transition: max-height 240ms ease, opacity 180ms ease; }
+.badge { position: absolute; top: -6px; right: -12px; min-width: 16px; padding: 0 4px; border-radius: 99px; background: var(--primary); color: var(--primary-foreground); font-size: 10px; line-height: 16px; }
+.bar[data-compact="true"] { width: min(calc(var(--glass-count) * 48px + 12px), 100%); }
+.bar[data-compact="true"] .item { min-height: 44px; height: 44px; gap: 0; padding: 8px 4px; }
+.bar[data-compact="true"] .label { max-height: 0; opacity: 0; overflow: hidden; }
+.bar[data-dragging="true"] .lens { transition-duration: 100ms; }
+@media (prefers-reduced-motion: reduce) { .bar, .bar *, .bar *::before { transition: none !important; } }
+@supports not (backdrop-filter: blur(1px)) { .bar { background: var(--background); } }
+
+@media (hover: hover) and (pointer: fine) {
+  .item:not(:disabled):hover { background: color-mix(in oklab, var(--foreground) 6%, transparent); }
+}

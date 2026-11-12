@@ -1,24 +1,42 @@
 "use client"
 
-import { ArrowRight, Bookmark, Compass, NotebookPen, PenLine, Plus, Trash2, X } from "lucide-react"
-import { useState } from "react"
+import { ArrowRight, Bookmark, ChevronLeft, Compass, NotebookPen, PenLine, Plus, Trash2, X } from "lucide-react"
+import { useState, type ReactNode } from "react"
 
 import { ClueField, type Clue } from "@/components/gwangeuk/clue-field"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+  AlertDialogTrigger,
+} from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { MobileAppShell, MobileScreenHeading, MobileToolbarButton } from "@/components/ui/mobile-app-shell"
+import {
+  MobileAppShell,
+  MobileListCard,
+  MobileScreenHeading,
+  MobileToolbarButton,
+} from "@/components/ui/mobile-app-shell"
 import { Progress } from "@/components/ui/progress"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { SuccessMark } from "@/components/ui/success-mark"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import {
   addCustomEntry,
   countChars,
   countRecordedNumbers,
+  deleteRecord,
   draftHasText,
+  draftOf,
   removeCustomEntry,
   saveDraft,
   setDraftText,
@@ -28,30 +46,63 @@ import {
   useRecordStore,
   type StoreState,
 } from "@/lib/record-store"
-import { formatDate, numbers, reviews, show, WHOLE_SHOW, type AudienceReview, type ShowRecord } from "@/lib/show-data"
+import {
+  formatDate,
+  getShow,
+  shows,
+  WHOLE_SHOW,
+  type AudienceReview,
+  type Show,
+  type ShowRecord,
+} from "@/lib/show-data"
 
 type Tab = "explore" | "records" | "bookmarks"
-type View = { name: "tabs" } | { name: "write" } | { name: "result"; recordId: string; justSaved: boolean }
+type View =
+  | { name: "tabs" }
+  | { name: "write"; showId: string }
+  | { name: "result"; recordId: string; justSaved: boolean }
 
-function clueFor(numberId: string, bookmarks: string[]): Clue {
-  const saved = bookmarks
-    .map((id) => reviews.find((review) => review.id === id))
+function bookmarkedFor(show: Show, numberId: string, bookmarks: string[]) {
+  return bookmarks
+    .map((id) => show.reviews.find((review) => review.id === id))
     .find((review): review is AudienceReview => review?.numberId === numberId)
+}
+
+function clueFor(show: Show, numberId: string, bookmarks: string[]): Clue {
+  const saved = bookmarkedFor(show, numberId, bookmarks)
   if (saved) return { kind: "bookmark", text: saved.body, author: saved.author }
-  const number = numbers.find((n) => n.id === numberId)!
+  const number = show.numbers.find((n) => n.id === numberId)!
   return { kind: "ai", text: number.aiReview }
+}
+
+function numberLabel(show: Show, numberId: string) {
+  const number = show.numbers.find((n) => n.id === numberId)
+  return number ? `${number.order}. ${number.title}` : "공연 전체"
+}
+
+function filledNumbers(show: Show, store: StoreState) {
+  const draft = draftOf(store, show.id)
+  return show.numbers.filter(
+    (n) => (draft.texts[n.id] ?? "").trim() || draft.custom.some((e) => e.numberId === n.id && e.text.trim()),
+  ).length
 }
 
 export function GwangeukApp() {
   const store = useRecordStore()
   const [tab, setTab] = useState<Tab>("explore")
+  const [exploreShowId, setExploreShowId] = useState<string | null>(null)
   const [view, setView] = useState<View>({ name: "tabs" })
 
-  const openWrite = () => setView({ name: "write" })
+  const openWrite = (showId: string) => setView({ name: "write", showId })
+  const backToRecords = () => {
+    setTab("records")
+    setView({ name: "tabs" })
+  }
 
   if (view.name === "write") {
     return (
       <WriteScreen
+        show={getShow(view.showId)}
         store={store}
         onClose={() => setView({ name: "tabs" })}
         onSaved={(recordId) => setView({ name: "result", recordId, justSaved: true })}
@@ -62,22 +113,22 @@ export function GwangeukApp() {
   if (view.name === "result") {
     const record = store.records.find((r) => r.id === view.recordId)
     if (record) {
-      return (
-        <ResultScreen
-          record={record}
-          records={store.records}
-          justSaved={view.justSaved}
-          onBack={() => {
-            setTab("records")
-            setView({ name: "tabs" })
-          }}
-        />
-      )
+      return <ResultScreen record={record} records={store.records} justSaved={view.justSaved} onBack={backToRecords} />
     }
   }
 
+  const exploreShow = tab === "explore" && exploreShowId ? getShow(exploreShowId) : null
+
   return (
     <MobileAppShell
+      title={exploreShow?.title}
+      leading={
+        exploreShow ? (
+          <MobileToolbarButton aria-label="공연 목록" onClick={() => setExploreShowId(null)}>
+            <ChevronLeft strokeWidth={2} />
+          </MobileToolbarButton>
+        ) : undefined
+      }
       navigation={{
         "aria-label": "주요 메뉴",
         value: tab,
@@ -94,47 +145,71 @@ export function GwangeukApp() {
         ],
       }}
     >
-      {tab === "explore" && <ExploreScreen store={store} onWrite={openWrite} />}
+      {tab === "explore" &&
+        (exploreShow ? (
+          <ShowDetailScreen show={exploreShow} store={store} onWrite={() => openWrite(exploreShow.id)} />
+        ) : (
+          <ShowListScreen store={store} onOpen={setExploreShowId} />
+        ))}
       {tab === "records" && (
         <RecordsScreen
           store={store}
-          onWrite={openWrite}
+          onExplore={() => setTab("explore")}
           onOpen={(recordId) => setView({ name: "result", recordId, justSaved: false })}
         />
       )}
-      {tab === "bookmarks" && <BookmarksScreen store={store} onExplore={() => setTab("explore")} />}
+      {tab === "bookmarks" && (
+        <BookmarksScreen
+          store={store}
+          onExplore={() => {
+            setExploreShowId(null)
+            setTab("explore")
+          }}
+        />
+      )}
     </MobileAppShell>
   )
 }
 
-/* ───────────── 공연 카드 ───────────── */
+/* ───────────── 탐색: 공연 목록 ───────────── */
 
-function TodayShowCard({ store, onWrite }: { store: StoreState; onWrite: () => void }) {
-  const draftCount = numbers.filter(
-    (n) => (store.draft.texts[n.id] ?? "").trim() || store.draft.custom.some((e) => e.numberId === n.id && e.text.trim()),
-  ).length
-  const hasDraft = draftHasText(store.draft)
+function ShowListScreen({ store, onOpen }: { store: StoreState; onOpen: (showId: string) => void }) {
   return (
-    <Card>
-      <CardHeader>
-        <CardTitle className="text-lg font-semibold">{show.title}</CardTitle>
-        <CardDescription>
-          {show.todayLabel} · {show.venue}
-          <br />
-          {show.cast}
-        </CardDescription>
-      </CardHeader>
-      <CardFooter>
-        <Button className="w-full" onClick={onWrite}>
-          <PenLine data-icon="inline-start" strokeWidth={2} aria-hidden />
-          {hasDraft ? `이어서 기록하기 (${draftCount}/${numbers.length})` : "오늘 공연 기록하기"}
-        </Button>
-      </CardFooter>
-    </Card>
+    <div className="flex flex-col gap-6 pt-4 pb-6 break-keep">
+      <MobileScreenHeading>탐색</MobileScreenHeading>
+      <ul className="flex flex-col gap-3">
+        {shows.map((show) => {
+          const saved = show.reviews.filter((r) => store.bookmarks.includes(r.id)).length
+          const inProgress = draftHasText(draftOf(store, show.id))
+          return (
+            <li key={show.id}>
+              <MobileListCard
+                href={`#${show.id}`}
+                onClick={(event) => {
+                  event.preventDefault()
+                  onOpen(show.id)
+                }}
+              >
+                <span className="flex flex-col gap-1">
+                  <span className="text-lg font-semibold">{show.title}</span>
+                  <span className="font-normal text-muted-foreground">
+                    {show.todayLabel} · {show.venue}
+                  </span>
+                  <span className="font-normal text-muted-foreground">
+                    후기 {show.reviews.length}개{saved > 0 && ` · 북마크 ${saved}개`}
+                    {inProgress && " · 작성 중"}
+                  </span>
+                </span>
+              </MobileListCard>
+            </li>
+          )
+        })}
+      </ul>
+    </div>
   )
 }
 
-/* ───────────── 탐색 ───────────── */
+/* ───────────── 탐색: 공연 상세 ───────────── */
 
 function ReviewCard({ review, bookmarked }: { review: AudienceReview; bookmarked: boolean }) {
   return (
@@ -162,13 +237,33 @@ function ReviewCard({ review, bookmarked }: { review: AudienceReview; bookmarked
   )
 }
 
-function ExploreScreen({ store, onWrite }: { store: StoreState; onWrite: () => void }) {
+function ShowDetailScreen({ show, store, onWrite }: { show: Show; store: StoreState; onWrite: () => void }) {
+  const draftCount = filledNumbers(show, store)
+  const hasDraft = draftHasText(draftOf(store, show.id))
   return (
-    <div className="flex flex-col gap-6 pt-4 pb-6 break-keep">
-      <MobileScreenHeading>탐색</MobileScreenHeading>
-      <TodayShowCard store={store} onWrite={onWrite} />
-      {numbers.map((number) => {
-        const list = reviews.filter((review) => review.numberId === number.id)
+    <div className="flex flex-col gap-6 pt-2 pb-6 break-keep">
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-lg font-semibold">{show.title}</CardTitle>
+          <CardDescription>
+            {show.todayLabel} · {show.venue}
+            {show.cast && (
+              <>
+                <br />
+                {show.cast}
+              </>
+            )}
+          </CardDescription>
+        </CardHeader>
+        <CardFooter>
+          <Button className="w-full" onClick={onWrite}>
+            <PenLine data-icon="inline-start" strokeWidth={2} aria-hidden />
+            {hasDraft ? `이어서 기록하기 (${draftCount}/${show.numbers.length})` : "오늘 공연 기록하기"}
+          </Button>
+        </CardFooter>
+      </Card>
+      {show.numbers.map((number) => {
+        const list = show.reviews.filter((review) => review.numberId === number.id)
         return (
           <section key={number.id} aria-labelledby={`explore-${number.id}`} className="flex flex-col gap-3">
             <div className="flex flex-col gap-1 px-1">
@@ -191,34 +286,23 @@ function ExploreScreen({ store, onWrite }: { store: StoreState; onWrite: () => v
 
 type WriteTab = "write" | "numbers"
 
-function bookmarkedFor(numberId: string, bookmarks: string[]) {
-  return bookmarks
-    .map((id) => reviews.find((review) => review.id === id))
-    .find((review): review is AudienceReview => review?.numberId === numberId)
-}
-
-function numberLabel(numberId: string) {
-  const number = numbers.find((n) => n.id === numberId)
-  return number ? `${number.order}. ${number.title}` : "공연 전체"
-}
-
 function WriteScreen({
+  show,
   store,
   onClose,
   onSaved,
 }: {
+  show: Show
   store: StoreState
   onClose: () => void
   onSaved: (recordId: string) => void
 }) {
-  const filled = numbers.filter(
-    (n) =>
-      (store.draft.texts[n.id] ?? "").trim() || store.draft.custom.some((e) => e.numberId === n.id && e.text.trim()),
-  ).length
-  const canSave = draftHasText(store.draft)
-  const bookmarkedNumbers = numbers.filter((n) => bookmarkedFor(n.id, store.bookmarks))
+  const draft = draftOf(store, show.id)
+  const filled = filledNumbers(show, store)
+  const canSave = draftHasText(draft)
+  const bookmarkedNumbers = show.numbers.filter((n) => bookmarkedFor(show, n.id, store.bookmarks))
   // 북마크가 없으면(최초 작성) 넘버 순서와 장면 설명을 바탕으로 한 AI 모의 후기를 단서로 쓴다.
-  const clueNumbers = bookmarkedNumbers.length > 0 ? bookmarkedNumbers : numbers
+  const clueNumbers = bookmarkedNumbers.length > 0 ? bookmarkedNumbers : show.numbers
   const [writeTab, setWriteTab] = useState<WriteTab>("write")
   const [focusId, setFocusId] = useState<string | null>(null)
 
@@ -235,7 +319,7 @@ function WriteScreen({
           size="md"
           className="w-full"
           disabled={!canSave}
-          onClick={() => onSaved(saveDraft((id) => clueFor(id, store.bookmarks).kind))}
+          onClick={() => onSaved(saveDraft(show.id, (id) => clueFor(show, id, store.bookmarks).kind))}
         >
           기록 저장
         </Button>
@@ -247,7 +331,10 @@ function WriteScreen({
             <h1 className="text-xl font-semibold">{show.title}</h1>
             <p className="text-muted-foreground">{show.todayLabel}</p>
           </div>
-          <Progress value={(filled / numbers.length) * 100} aria-label={`${numbers.length}개 넘버 중 ${filled}개 기록`} />
+          <Progress
+            value={(filled / show.numbers.length) * 100}
+            aria-label={`${show.numbers.length}개 넘버 중 ${filled}개 기록`}
+          />
         </div>
 
         <Tabs value={writeTab} onValueChange={(value) => setWriteTab(value as WriteTab)} className="gap-6">
@@ -267,16 +354,16 @@ function WriteScreen({
                 <CardContent>
                   <ClueField
                     label={`${number.title} 기록`}
-                    clue={clueFor(number.id, store.bookmarks)}
-                    value={store.draft.texts[number.id] ?? ""}
-                    onFocus={startDraft}
-                    onChange={(text) => setDraftText(number.id, text)}
+                    clue={clueFor(show, number.id, store.bookmarks)}
+                    value={draft.texts[number.id] ?? ""}
+                    onFocus={() => startDraft(show.id)}
+                    onChange={(text) => setDraftText(show.id, number.id, text)}
                   />
                 </CardContent>
               </Card>
             ))}
 
-            {store.draft.custom.map((entry, index) => (
+            {draft.custom.map((entry, index) => (
               <Card key={entry.id}>
                 <CardHeader>
                   <CardTitle className="text-base font-semibold">내 감상 {index + 1}</CardTitle>
@@ -286,20 +373,23 @@ function WriteScreen({
                       size="icon"
                       aria-label={`내 감상 ${index + 1} 삭제`}
                       className="text-muted-foreground"
-                      onClick={() => removeCustomEntry(entry.id)}
+                      onClick={() => removeCustomEntry(show.id, entry.id)}
                     >
                       <Trash2 strokeWidth={2} aria-hidden />
                     </Button>
                   </CardAction>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
-                  <Select value={entry.numberId} onValueChange={(numberId) => updateCustomEntry(entry.id, { numberId })}>
+                  <Select
+                    value={entry.numberId}
+                    onValueChange={(numberId) => updateCustomEntry(show.id, entry.id, { numberId })}
+                  >
                     <SelectTrigger className="w-full" aria-label={`내 감상 ${index + 1}의 넘버`}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value={WHOLE_SHOW}>공연 전체</SelectItem>
-                      {numbers.map((number) => (
+                      {show.numbers.map((number) => (
                         <SelectItem key={number.id} value={number.id}>
                           {number.order}. {number.title}
                         </SelectItem>
@@ -310,14 +400,18 @@ function WriteScreen({
                     aria-label={`내 감상 ${index + 1}`}
                     autoFocus={entry.id === focusId}
                     value={entry.text}
-                    onChange={(event) => updateCustomEntry(entry.id, { text: event.target.value })}
+                    onChange={(event) => updateCustomEntry(show.id, entry.id, { text: event.target.value })}
                     className="min-h-32 resize-none leading-relaxed"
                   />
                 </CardContent>
               </Card>
             ))}
 
-            <Button variant="secondary" className="w-full" onClick={() => setFocusId(addCustomEntry(WHOLE_SHOW))}>
+            <Button
+              variant="secondary"
+              className="w-full"
+              onClick={() => setFocusId(addCustomEntry(show.id, WHOLE_SHOW))}
+            >
               <Plus data-icon="inline-start" strokeWidth={2} aria-hidden />
               직접 작성하기
             </Button>
@@ -327,7 +421,7 @@ function WriteScreen({
             <Card>
               <CardContent>
                 <ol className="flex flex-col gap-4">
-                  {numbers.map((number, index) => (
+                  {show.numbers.map((number, index) => (
                     <li key={number.id} className="flex flex-col gap-4">
                       {index > 0 && <Separator />}
                       <div className="flex flex-col gap-1">
@@ -348,11 +442,50 @@ function WriteScreen({
   )
 }
 
+/* ───────────── 기록 삭제 확인 ───────────── */
+
+function DeleteRecordDialog({
+  record,
+  onDeleted,
+  children,
+}: {
+  record: ShowRecord
+  onDeleted?: () => void
+  children: ReactNode
+}) {
+  const show = getShow(record.showId)
+  return (
+    <AlertDialog>
+      <AlertDialogTrigger asChild>{children}</AlertDialogTrigger>
+      <AlertDialogContent>
+        <AlertDialogHeader>
+          <AlertDialogTitle>기록을 삭제할까요?</AlertDialogTitle>
+          <AlertDialogDescription>
+            {show.title} · {formatDate(record.date)} 기록이 삭제되고 되돌릴 수 없어요.
+          </AlertDialogDescription>
+        </AlertDialogHeader>
+        <AlertDialogFooter>
+          <AlertDialogCancel>취소</AlertDialogCancel>
+          <AlertDialogAction
+            variant="destructive"
+            onClick={() => {
+              deleteRecord(record.id)
+              onDeleted?.()
+            }}
+          >
+            삭제
+          </AlertDialogAction>
+        </AlertDialogFooter>
+      </AlertDialogContent>
+    </AlertDialog>
+  )
+}
+
 /* ───────────── 결과 ───────────── */
 
 function previousRecord(record: ShowRecord, records: ShowRecord[]) {
   return records
-    .filter((r) => r.id !== record.id && r.date < record.date)
+    .filter((r) => r.id !== record.id && r.showId === record.showId && r.date < record.date)
     .sort((a, b) => b.date.localeCompare(a.date))[0]
 }
 
@@ -373,12 +506,14 @@ function ResultScreen({
   justSaved: boolean
   onBack: () => void
 }) {
+  const show = getShow(record.showId)
   const chars = countChars(record)
   const prev = previousRecord(record, records)
   const prevChars = prev ? countChars(prev) : 0
   const has = (r: ShowRecord | undefined, id: string) => r?.entries.some((e) => e.numberId === id) ?? false
-  const compared = [...numbers.map((n) => n.id), WHOLE_SHOW].filter((id) => has(record, id) || has(prev, id))
-  const textsOf = (r: ShowRecord | undefined, id: string) => r?.entries.filter((e) => e.numberId === id).map((e) => e.text) ?? []
+  const compared = [...show.numbers.map((n) => n.id), WHOLE_SHOW].filter((id) => has(record, id) || has(prev, id))
+  const textsOf = (r: ShowRecord | undefined, id: string) =>
+    r?.entries.filter((e) => e.numberId === id).map((e) => e.text) ?? []
 
   return (
     <MobileAppShell
@@ -387,6 +522,13 @@ function ResultScreen({
         <MobileToolbarButton aria-label="내 기록으로" onClick={onBack}>
           <X strokeWidth={2} />
         </MobileToolbarButton>
+      }
+      trailing={
+        <DeleteRecordDialog record={record} onDeleted={onBack}>
+          <MobileToolbarButton aria-label="기록 삭제">
+            <Trash2 strokeWidth={2} />
+          </MobileToolbarButton>
+        </DeleteRecordDialog>
       }
     >
       <div className="flex flex-col gap-6 pt-2 pb-8 break-keep">
@@ -402,11 +544,11 @@ function ResultScreen({
             <CardTitle className="text-base font-semibold">
               {show.title} · {formatDate(record.date)}
             </CardTitle>
-            <CardDescription>{record.cast}</CardDescription>
+            {record.cast && <CardDescription>{record.cast}</CardDescription>}
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-3 gap-2 text-center">
-              <Stat label="기록한 넘버" value={`${countRecordedNumbers(record)}/${numbers.length}`} />
+              <Stat label="기록한 넘버" value={`${countRecordedNumbers(record)}/${show.numbers.length}`} />
               <Stat label="글자 수" value={chars.toLocaleString("ko-KR")} />
               <Stat label="작성 시간" value={formatDuration(record.durationSec)} />
             </dl>
@@ -414,7 +556,8 @@ function ResultScreen({
           {prev && (
             <CardFooter className="pb-(--card-spacing)">
               <p className="text-muted-foreground">
-                {formatDate(prev.date)} 기록보다 {chars >= prevChars ? `${chars - prevChars}자 더` : `${prevChars - chars}자 적게`} 남겼어요.
+                {formatDate(prev.date)} 기록보다{" "}
+                {chars >= prevChars ? `${chars - prevChars}자 더` : `${prevChars - chars}자 적게`} 남겼어요.
               </p>
             </CardFooter>
           )}
@@ -424,24 +567,22 @@ function ResultScreen({
           <h2 id="compare-heading" className="px-1 text-lg font-semibold">
             {prev ? `${formatDate(prev.date)} 회차와 비교` : "오늘의 감상"}
           </h2>
-          {compared.map((id) => {
-            return (
-              <Card key={id} size="sm">
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold">{numberLabel(id)}</CardTitle>
-                </CardHeader>
-                <CardContent className="flex flex-col gap-3">
-                  <Entry label={formatDate(record.date)} texts={textsOf(record, id)} current />
-                  {prev && (
-                    <>
-                      <Separator />
-                      <Entry label={formatDate(prev.date)} texts={textsOf(prev, id)} />
-                    </>
-                  )}
-                </CardContent>
-              </Card>
-            )
-          })}
+          {compared.map((id) => (
+            <Card key={id} size="sm">
+              <CardHeader>
+                <CardTitle className="text-base font-semibold">{numberLabel(show, id)}</CardTitle>
+              </CardHeader>
+              <CardContent className="flex flex-col gap-3">
+                <Entry label={formatDate(record.date)} texts={textsOf(record, id)} current />
+                {prev && (
+                  <>
+                    <Separator />
+                    <Entry label={formatDate(prev.date)} texts={textsOf(prev, id)} />
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          ))}
         </section>
 
         <Button variant="tertiary" className="w-full" onClick={onBack}>
@@ -485,39 +626,70 @@ function Entry({ label, texts, current }: { label: string; texts: string[]; curr
 
 function RecordsScreen({
   store,
-  onWrite,
+  onExplore,
   onOpen,
 }: {
   store: StoreState
-  onWrite: () => void
+  onExplore: () => void
   onOpen: (recordId: string) => void
 }) {
+  const records = [...store.records].sort((a, b) => b.date.localeCompare(a.date) || b.id.localeCompare(a.id))
   return (
     <div className="flex flex-col gap-6 pt-4 pb-6 break-keep">
       <MobileScreenHeading>내 기록</MobileScreenHeading>
-      <TodayShowCard store={store} onWrite={onWrite} />
-      <div className="flex flex-col gap-3">
-        {store.records.map((record) => (
-          <Card key={record.id} size="sm">
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">
-                {show.title} · {formatDate(record.date)}
-              </CardTitle>
-              <CardDescription>
-                넘버 {countRecordedNumbers(record)}개 · {countChars(record).toLocaleString("ko-KR")}자
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <p className="line-clamp-2 leading-relaxed">{record.entries[0]?.text}</p>
-            </CardContent>
-            <CardFooter>
-              <Button variant="tertiary" className="w-full" onClick={() => onOpen(record.id)}>
-                감상 비교하기
-              </Button>
-            </CardFooter>
-          </Card>
-        ))}
-      </div>
+      {records.length === 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base font-semibold">아직 남긴 기록이 없어요</CardTitle>
+            <CardDescription className="leading-relaxed">
+              탐색에서 공연을 고르고 오늘 공연을 기록해 보세요.
+            </CardDescription>
+          </CardHeader>
+          <CardFooter>
+            <Button className="w-full" onClick={onExplore}>
+              공연 둘러보기
+            </Button>
+          </CardFooter>
+        </Card>
+      ) : (
+        <div className="flex flex-col gap-3">
+          {records.map((record) => {
+            const show = getShow(record.showId)
+            return (
+              <Card key={record.id} size="sm">
+                <CardHeader>
+                  <CardTitle className="text-base font-semibold">
+                    {show.title} · {formatDate(record.date)}
+                  </CardTitle>
+                  <CardDescription>
+                    넘버 {countRecordedNumbers(record)}개 · {countChars(record).toLocaleString("ko-KR")}자
+                  </CardDescription>
+                  <CardAction>
+                    <DeleteRecordDialog record={record}>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="text-muted-foreground"
+                        aria-label={`${show.title} ${formatDate(record.date)} 기록 삭제`}
+                      >
+                        <Trash2 strokeWidth={2} aria-hidden />
+                      </Button>
+                    </DeleteRecordDialog>
+                  </CardAction>
+                </CardHeader>
+                <CardContent>
+                  <p className="line-clamp-2 leading-relaxed">{record.entries[0]?.text}</p>
+                </CardContent>
+                <CardFooter>
+                  <Button variant="tertiary" className="w-full" onClick={() => onOpen(record.id)}>
+                    감상 비교하기
+                  </Button>
+                </CardFooter>
+              </Card>
+            )
+          })}
+        </div>
+      )}
     </div>
   )
 }
@@ -525,14 +697,17 @@ function RecordsScreen({
 /* ───────────── 북마크함 ───────────── */
 
 function BookmarksScreen({ store, onExplore }: { store: StoreState; onExplore: () => void }) {
-  const saved = store.bookmarks
-    .map((id) => reviews.find((review) => review.id === id))
-    .filter((review): review is AudienceReview => review != null)
+  const groups = shows
+    .map((show) => ({
+      show,
+      saved: show.reviews.filter((review) => store.bookmarks.includes(review.id)),
+    }))
+    .filter((group) => group.saved.length > 0)
 
   return (
     <div className="flex flex-col gap-6 pt-4 pb-6 break-keep">
       <MobileScreenHeading>북마크함</MobileScreenHeading>
-      {saved.length === 0 ? (
+      {groups.length === 0 ? (
         <Card>
           <CardHeader>
             <CardTitle className="text-base font-semibold">아직 북마크한 후기가 없어요</CardTitle>
@@ -547,20 +722,27 @@ function BookmarksScreen({ store, onExplore }: { store: StoreState; onExplore: (
           </CardFooter>
         </Card>
       ) : (
-        numbers
-          .filter((number) => saved.some((review) => review.numberId === number.id))
-          .map((number) => (
-            <section key={number.id} aria-labelledby={`bm-${number.id}`} className="flex flex-col gap-3">
-              <h2 id={`bm-${number.id}`} className="px-1 text-lg font-semibold">
-                {number.order}. {number.title}
-              </h2>
-              {saved
-                .filter((review) => review.numberId === number.id)
-                .map((review) => (
-                  <ReviewCard key={review.id} review={review} bookmarked />
-                ))}
-            </section>
-          ))
+        groups.map(({ show, saved }) => (
+          <section key={show.id} aria-labelledby={`bm-${show.id}`} className="flex flex-col gap-4">
+            <h2 id={`bm-${show.id}`} className="px-1 text-xl font-semibold">
+              {show.title}
+            </h2>
+            {show.numbers
+              .filter((number) => saved.some((review) => review.numberId === number.id))
+              .map((number) => (
+                <div key={number.id} className="flex flex-col gap-3">
+                  <h3 className="px-1 text-base font-semibold text-muted-foreground">
+                    {number.order}. {number.title}
+                  </h3>
+                  {saved
+                    .filter((review) => review.numberId === number.id)
+                    .map((review) => (
+                      <ReviewCard key={review.id} review={review} bookmarked />
+                    ))}
+                </div>
+              ))}
+          </section>
+        ))
       )}
     </div>
   )

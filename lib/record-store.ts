@@ -2,7 +2,7 @@
 
 import { useSyncExternalStore } from "react"
 
-import { numbers, seedRecords, show, type RecordEntry, type ShowRecord } from "@/lib/show-data"
+import { getShow, seedRecords, TODAY, type RecordEntry, type ShowRecord } from "@/lib/show-data"
 
 export type CustomEntry = {
   id: string
@@ -19,20 +19,54 @@ export type Draft = {
 export type StoreState = {
   bookmarks: string[]
   records: ShowRecord[]
-  draft: Draft
+  /** 공연별 작성 중인 기록 */
+  drafts: Record<string, Draft>
 }
 
-const STORAGE_KEY = "myuchive:v1"
+const STORAGE_KEY = "myuchive:v2"
+const LEGACY_KEY = "myuchive:v1"
+
+export const emptyDraft: Draft = { texts: {}, custom: [], startedAt: null }
 
 const initialState: StoreState = {
   bookmarks: [],
   records: seedRecords,
-  draft: { texts: {}, custom: [], startedAt: null },
+  drafts: {},
 }
 
 let state: StoreState = initialState
 let loaded = false
 const listeners = new Set<() => void>()
+
+/** v1(공연 1개)에 저장된 기록·북마크·작성 중인 기록을 겨울 정원 공연으로 옮긴다. */
+function migrateV1(raw: string): StoreState {
+  const v1 = JSON.parse(raw) as {
+    bookmarks?: string[]
+    records?: (Omit<ShowRecord, "showId"> & { showId?: string })[]
+    draft?: Partial<Draft>
+  }
+  const num = (id: string) => (/^n\d+$/.test(id) ? `wg-${id.slice(1)}` : id)
+  const rev = (id: string) => (/^r\d+$/.test(id) ? `wg-r${id.slice(1)}` : id)
+  const records = (v1.records ?? seedRecords).map((r) => ({
+    ...r,
+    showId: r.showId ?? "winter-garden",
+    entries: r.entries.map((e) => ({ ...e, numberId: num(e.numberId) })),
+  }))
+  const draft = v1.draft
+  return {
+    bookmarks: (v1.bookmarks ?? []).map(rev),
+    records,
+    drafts: draft
+      ? {
+          "winter-garden": {
+            texts: Object.fromEntries(Object.entries(draft.texts ?? {}).map(([k, v]) => [num(k), v])),
+            custom: (draft.custom ?? []).map((e) => ({ ...e, numberId: num(e.numberId) })),
+            startedAt: draft.startedAt ?? null,
+          },
+        }
+      : {},
+  }
+}
 
 function load() {
   if (loaded || typeof window === "undefined") return
@@ -44,11 +78,15 @@ function load() {
       state = {
         bookmarks: Array.isArray(saved.bookmarks) ? saved.bookmarks : initialState.bookmarks,
         records: Array.isArray(saved.records) ? saved.records : initialState.records,
-        draft:
-          saved.draft && typeof saved.draft === "object"
-            ? { ...initialState.draft, ...(saved.draft as Partial<Draft>), custom: (saved.draft as Partial<Draft>).custom ?? [] }
-            : initialState.draft,
+        drafts: saved.drafts && typeof saved.drafts === "object" ? saved.drafts : {},
       }
+      return
+    }
+    const legacy = window.localStorage.getItem(LEGACY_KEY)
+    if (legacy) {
+      state = migrateV1(legacy)
+      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
+      window.localStorage.removeItem(LEGACY_KEY)
     }
   } catch {
     state = initialState
@@ -83,6 +121,14 @@ export function useRecordStore() {
   return useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot)
 }
 
+export function draftOf(store: StoreState, showId: string): Draft {
+  return store.drafts[showId] ?? emptyDraft
+}
+
+function updateDraft(showId: string, update: (draft: Draft) => Draft) {
+  setState({ ...state, drafts: { ...state.drafts, [showId]: update(draftOf(state, showId)) } })
+}
+
 export function toggleBookmark(reviewId: string) {
   const has = state.bookmarks.includes(reviewId)
   setState({
@@ -91,62 +137,66 @@ export function toggleBookmark(reviewId: string) {
   })
 }
 
-export function startDraft() {
-  if (state.draft.startedAt != null) return
-  setState({ ...state, draft: { ...state.draft, startedAt: Date.now() } })
+export function startDraft(showId: string) {
+  if (draftOf(state, showId).startedAt != null) return
+  updateDraft(showId, (d) => ({ ...d, startedAt: Date.now() }))
 }
 
-export function setDraftText(numberId: string, text: string) {
-  setState({ ...state, draft: { ...state.draft, texts: { ...state.draft.texts, [numberId]: text } } })
+export function setDraftText(showId: string, numberId: string, text: string) {
+  updateDraft(showId, (d) => ({ ...d, texts: { ...d.texts, [numberId]: text } }))
 }
 
-export function addCustomEntry(numberId: string) {
+export function addCustomEntry(showId: string, numberId: string) {
   const entry: CustomEntry = { id: `own-${Date.now()}`, numberId, text: "" }
-  setState({
-    ...state,
-    draft: { ...state.draft, startedAt: state.draft.startedAt ?? Date.now(), custom: [...state.draft.custom, entry] },
-  })
+  updateDraft(showId, (d) => ({ ...d, startedAt: d.startedAt ?? Date.now(), custom: [...d.custom, entry] }))
   return entry.id
 }
 
-export function updateCustomEntry(id: string, patch: Partial<Omit<CustomEntry, "id">>) {
-  setState({
-    ...state,
-    draft: { ...state.draft, custom: state.draft.custom.map((e) => (e.id === id ? { ...e, ...patch } : e)) },
-  })
+export function updateCustomEntry(showId: string, id: string, patch: Partial<Omit<CustomEntry, "id">>) {
+  updateDraft(showId, (d) => ({ ...d, custom: d.custom.map((e) => (e.id === id ? { ...e, ...patch } : e)) }))
 }
 
-export function removeCustomEntry(id: string) {
-  setState({ ...state, draft: { ...state.draft, custom: state.draft.custom.filter((e) => e.id !== id) } })
+export function removeCustomEntry(showId: string, id: string) {
+  updateDraft(showId, (d) => ({ ...d, custom: d.custom.filter((e) => e.id !== id) }))
 }
 
 export function draftHasText(draft: Draft) {
   return Object.values(draft.texts).some((t) => t.trim()) || draft.custom.some((e) => e.text.trim())
 }
 
-export function saveDraft(clueFor: (numberId: string) => RecordEntry["clue"]): string {
-  const entries: RecordEntry[] = numbers
-    .map((n) => ({ numberId: n.id, text: (state.draft.texts[n.id] ?? "").trim(), clue: clueFor(n.id) }))
+export function saveDraft(showId: string, clueFor: (numberId: string) => RecordEntry["clue"]): string {
+  const show = getShow(showId)
+  const draft = draftOf(state, showId)
+  const entries: RecordEntry[] = show.numbers
+    .map((n) => ({ numberId: n.id, text: (draft.texts[n.id] ?? "").trim(), clue: clueFor(n.id) }))
     .filter((entry) => entry.text.length > 0)
-  const own: RecordEntry[] = state.draft.custom
+  const own: RecordEntry[] = draft.custom
     .map((e) => ({ numberId: e.numberId, text: e.text.trim(), clue: "own" as const }))
     .filter((entry) => entry.text.length > 0)
   entries.push(...own)
-  const startedAt = state.draft.startedAt ?? Date.now()
+  const startedAt = draft.startedAt ?? Date.now()
   const record: ShowRecord = {
     id: `rec-${Date.now()}`,
-    date: show.today,
+    showId,
+    date: TODAY,
     cast: show.cast,
     entries,
     durationSec: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
   }
+  const drafts = { ...state.drafts }
+  delete drafts[showId]
   // 북마크는 그대로 둔다. 작성 화면에서만 단서가 사라진다.
-  setState({ ...state, records: [record, ...state.records], draft: { texts: {}, custom: [], startedAt: null } })
+  setState({ ...state, records: [record, ...state.records], drafts })
   return record.id
 }
 
+export function deleteRecord(recordId: string) {
+  setState({ ...state, records: state.records.filter((r) => r.id !== recordId) })
+}
+
 export function countRecordedNumbers(record: ShowRecord) {
-  return new Set(record.entries.map((e) => e.numberId).filter((id) => numbers.some((n) => n.id === id))).size
+  const show = getShow(record.showId)
+  return new Set(record.entries.map((e) => e.numberId).filter((id) => show.numbers.some((n) => n.id === id))).size
 }
 
 export function countChars(record: ShowRecord) {

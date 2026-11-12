@@ -15,11 +15,15 @@ export type AudienceReview = {
   body: string
 }
 
+/** 넘버와 묶이지 않은 공연 전체 감상 */
+export const WHOLE_SHOW = "all"
+
 export type RecordEntry = {
+  /** 넘버 id 또는 WHOLE_SHOW */
   numberId: string
   text: string
-  /** 작성할 때 보였던 단서 */
-  clue: "bookmark" | "ai"
+  /** 작성할 때 보였던 단서. own은 직접 작성하기로 추가한 감상 */
+  clue: "bookmark" | "ai" | "own"
 }
 
 export type ShowRecord = {

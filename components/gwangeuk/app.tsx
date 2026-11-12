@@ -1,6 +1,6 @@
 "use client"
 
-import { ArrowRight, Bookmark, Compass, NotebookPen, PenLine, X } from "lucide-react"
+import { ArrowRight, Bookmark, Compass, NotebookPen, PenLine, Plus, Trash2, X } from "lucide-react"
 import { useState } from "react"
 
 import { ClueField, type Clue } from "@/components/gwangeuk/clue-field"
@@ -11,17 +11,24 @@ import { MobileAppShell, MobileScreenHeading, MobileToolbarButton } from "@/comp
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { SuccessMark } from "@/components/ui/success-mark"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
 import {
+  addCustomEntry,
   countChars,
+  countRecordedNumbers,
+  draftHasText,
+  removeCustomEntry,
   saveDraft,
   setDraftText,
   startDraft,
   toggleBookmark,
+  updateCustomEntry,
   useRecordStore,
   type StoreState,
 } from "@/lib/record-store"
-import { formatDate, numbers, reviews, show, type AudienceReview, type ShowRecord } from "@/lib/show-data"
+import { formatDate, numbers, reviews, show, WHOLE_SHOW, type AudienceReview, type ShowRecord } from "@/lib/show-data"
 
 type Tab = "explore" | "records" | "bookmarks"
 type View = { name: "tabs" } | { name: "write" } | { name: "result"; recordId: string; justSaved: boolean }
@@ -103,7 +110,10 @@ export function GwangeukApp() {
 /* ───────────── 공연 카드 ───────────── */
 
 function TodayShowCard({ store, onWrite }: { store: StoreState; onWrite: () => void }) {
-  const draftCount = Object.values(store.draft.texts).filter((text) => text.trim()).length
+  const draftCount = numbers.filter(
+    (n) => (store.draft.texts[n.id] ?? "").trim() || store.draft.custom.some((e) => e.numberId === n.id && e.text.trim()),
+  ).length
+  const hasDraft = draftHasText(store.draft)
   return (
     <Card>
       <CardHeader>
@@ -117,7 +127,7 @@ function TodayShowCard({ store, onWrite }: { store: StoreState; onWrite: () => v
       <CardFooter>
         <Button className="w-full" onClick={onWrite}>
           <PenLine data-icon="inline-start" strokeWidth={2} aria-hidden />
-          {draftCount > 0 ? `이어서 기록하기 (${draftCount}/${numbers.length})` : "오늘 공연 기록하기"}
+          {hasDraft ? `이어서 기록하기 (${draftCount}/${numbers.length})` : "오늘 공연 기록하기"}
         </Button>
       </CardFooter>
     </Card>
@@ -179,12 +189,17 @@ function ExploreScreen({ store, onWrite }: { store: StoreState; onWrite: () => v
 
 /* ───────────── 작성 (Aha) ───────────── */
 
-type WriteTab = "bookmarks" | "numbers"
+type WriteTab = "write" | "numbers"
 
 function bookmarkedFor(numberId: string, bookmarks: string[]) {
   return bookmarks
     .map((id) => reviews.find((review) => review.id === id))
     .find((review): review is AudienceReview => review?.numberId === numberId)
+}
+
+function numberLabel(numberId: string) {
+  const number = numbers.find((n) => n.id === numberId)
+  return number ? `${number.order}. ${number.title}` : "공연 전체"
 }
 
 function WriteScreen({
@@ -196,20 +211,16 @@ function WriteScreen({
   onClose: () => void
   onSaved: (recordId: string) => void
 }) {
-  const filled = numbers.filter((n) => (store.draft.texts[n.id] ?? "").trim()).length
-  const canSave = filled > 0
+  const filled = numbers.filter(
+    (n) =>
+      (store.draft.texts[n.id] ?? "").trim() || store.draft.custom.some((e) => e.numberId === n.id && e.text.trim()),
+  ).length
+  const canSave = draftHasText(store.draft)
   const bookmarkedNumbers = numbers.filter((n) => bookmarkedFor(n.id, store.bookmarks))
-  const [writeTab, setWriteTab] = useState<WriteTab>(bookmarkedNumbers.length > 0 ? "bookmarks" : "numbers")
-
-  const field = (number: (typeof numbers)[number], clue: Clue) => (
-    <ClueField
-      label={`${number.title} 기록`}
-      clue={clue}
-      value={store.draft.texts[number.id] ?? ""}
-      onFocus={startDraft}
-      onChange={(text) => setDraftText(number.id, text)}
-    />
-  )
+  // 북마크가 없으면(최초 작성) 넘버 순서와 장면 설명을 바탕으로 한 AI 모의 후기를 단서로 쓴다.
+  const clueNumbers = bookmarkedNumbers.length > 0 ? bookmarkedNumbers : numbers
+  const [writeTab, setWriteTab] = useState<WriteTab>("write")
+  const [focusId, setFocusId] = useState<string | null>(null)
 
   return (
     <MobileAppShell
@@ -241,56 +252,95 @@ function WriteScreen({
 
         <Tabs value={writeTab} onValueChange={(value) => setWriteTab(value as WriteTab)} className="gap-6">
           <TabsList sizing="fill">
-            <TabsTrigger value="bookmarks">북마크한 후기</TabsTrigger>
+            <TabsTrigger value="write">북마크한 후기</TabsTrigger>
             <TabsTrigger value="numbers">실제 목차/넘버</TabsTrigger>
           </TabsList>
 
-          <TabsContent value="bookmarks" className="flex flex-col gap-6">
-            {bookmarkedNumbers.length === 0 ? (
-              <Card>
-                <CardHeader>
-                  <CardTitle className="text-base font-semibold">북마크한 후기가 없어요</CardTitle>
-                  <CardDescription className="leading-relaxed">
-                    실제 목차/넘버에서 장면 설명과 AI 모의 후기를 보며 기록할 수 있어요.
-                  </CardDescription>
-                </CardHeader>
-                <CardFooter>
-                  <Button className="w-full" onClick={() => setWriteTab("numbers")}>
-                    목차/넘버 보기
-                  </Button>
-                </CardFooter>
-              </Card>
-            ) : (
-              bookmarkedNumbers.map((number) => {
-                const review = bookmarkedFor(number.id, store.bookmarks)!
-                return (
-                  <Card key={number.id}>
-                    <CardHeader>
-                      <CardTitle className="text-base font-semibold">
-                        {number.order}. {number.title}
-                      </CardTitle>
-                    </CardHeader>
-                    <CardContent>
-                      {field(number, { kind: "bookmark", text: review.body, author: review.author })}
-                    </CardContent>
-                  </Card>
-                )
-              })
-            )}
-          </TabsContent>
-
-          <TabsContent value="numbers" className="flex flex-col gap-6">
-            {numbers.map((number) => (
+          <TabsContent value="write" className="flex flex-col gap-6">
+            {clueNumbers.map((number) => (
               <Card key={number.id}>
                 <CardHeader>
                   <CardTitle className="text-base font-semibold">
                     {number.order}. {number.title}
                   </CardTitle>
-                  <CardDescription className="leading-relaxed">{number.scene}</CardDescription>
                 </CardHeader>
-                <CardContent>{field(number, { kind: "ai", text: number.aiReview })}</CardContent>
+                <CardContent>
+                  <ClueField
+                    label={`${number.title} 기록`}
+                    clue={clueFor(number.id, store.bookmarks)}
+                    value={store.draft.texts[number.id] ?? ""}
+                    onFocus={startDraft}
+                    onChange={(text) => setDraftText(number.id, text)}
+                  />
+                </CardContent>
               </Card>
             ))}
+
+            {store.draft.custom.map((entry, index) => (
+              <Card key={entry.id}>
+                <CardHeader>
+                  <CardTitle className="text-base font-semibold">내 감상 {index + 1}</CardTitle>
+                  <CardAction>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label={`내 감상 ${index + 1} 삭제`}
+                      className="text-muted-foreground"
+                      onClick={() => removeCustomEntry(entry.id)}
+                    >
+                      <Trash2 strokeWidth={2} aria-hidden />
+                    </Button>
+                  </CardAction>
+                </CardHeader>
+                <CardContent className="flex flex-col gap-3">
+                  <Select value={entry.numberId} onValueChange={(numberId) => updateCustomEntry(entry.id, { numberId })}>
+                    <SelectTrigger className="w-full" aria-label={`내 감상 ${index + 1}의 넘버`}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value={WHOLE_SHOW}>공연 전체</SelectItem>
+                      {numbers.map((number) => (
+                        <SelectItem key={number.id} value={number.id}>
+                          {number.order}. {number.title}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <Textarea
+                    aria-label={`내 감상 ${index + 1}`}
+                    autoFocus={entry.id === focusId}
+                    value={entry.text}
+                    onChange={(event) => updateCustomEntry(entry.id, { text: event.target.value })}
+                    className="min-h-32 resize-none leading-relaxed"
+                  />
+                </CardContent>
+              </Card>
+            ))}
+
+            <Button variant="secondary" className="w-full" onClick={() => setFocusId(addCustomEntry(WHOLE_SHOW))}>
+              <Plus data-icon="inline-start" strokeWidth={2} aria-hidden />
+              직접 작성하기
+            </Button>
+          </TabsContent>
+
+          <TabsContent value="numbers">
+            <Card>
+              <CardContent>
+                <ol className="flex flex-col gap-4">
+                  {numbers.map((number, index) => (
+                    <li key={number.id} className="flex flex-col gap-4">
+                      {index > 0 && <Separator />}
+                      <div className="flex flex-col gap-1">
+                        <h2 className="text-base font-semibold">
+                          {number.order}. {number.title}
+                        </h2>
+                        <p className="leading-relaxed text-muted-foreground">{number.scene}</p>
+                      </div>
+                    </li>
+                  ))}
+                </ol>
+              </CardContent>
+            </Card>
           </TabsContent>
         </Tabs>
       </div>
@@ -326,9 +376,9 @@ function ResultScreen({
   const chars = countChars(record)
   const prev = previousRecord(record, records)
   const prevChars = prev ? countChars(prev) : 0
-  const compared = numbers.filter(
-    (n) => record.entries.some((e) => e.numberId === n.id) || prev?.entries.some((e) => e.numberId === n.id),
-  )
+  const has = (r: ShowRecord | undefined, id: string) => r?.entries.some((e) => e.numberId === id) ?? false
+  const compared = [...numbers.map((n) => n.id), WHOLE_SHOW].filter((id) => has(record, id) || has(prev, id))
+  const textsOf = (r: ShowRecord | undefined, id: string) => r?.entries.filter((e) => e.numberId === id).map((e) => e.text) ?? []
 
   return (
     <MobileAppShell
@@ -356,7 +406,7 @@ function ResultScreen({
           </CardHeader>
           <CardContent>
             <dl className="grid grid-cols-3 gap-2 text-center">
-              <Stat label="기록한 넘버" value={`${record.entries.length}/${numbers.length}`} />
+              <Stat label="기록한 넘버" value={`${countRecordedNumbers(record)}/${numbers.length}`} />
               <Stat label="글자 수" value={chars.toLocaleString("ko-KR")} />
               <Stat label="작성 시간" value={formatDuration(record.durationSec)} />
             </dl>
@@ -374,22 +424,18 @@ function ResultScreen({
           <h2 id="compare-heading" className="px-1 text-lg font-semibold">
             {prev ? `${formatDate(prev.date)} 회차와 비교` : "오늘의 감상"}
           </h2>
-          {compared.map((number) => {
-            const now = record.entries.find((e) => e.numberId === number.id)
-            const before = prev?.entries.find((e) => e.numberId === number.id)
+          {compared.map((id) => {
             return (
-              <Card key={number.id} size="sm">
+              <Card key={id} size="sm">
                 <CardHeader>
-                  <CardTitle className="text-base font-semibold">
-                    {number.order}. {number.title}
-                  </CardTitle>
+                  <CardTitle className="text-base font-semibold">{numberLabel(id)}</CardTitle>
                 </CardHeader>
                 <CardContent className="flex flex-col gap-3">
-                  <Entry label={formatDate(record.date)} text={now?.text} current />
+                  <Entry label={formatDate(record.date)} texts={textsOf(record, id)} current />
                   {prev && (
                     <>
                       <Separator />
-                      <Entry label={formatDate(prev.date)} text={before?.text} />
+                      <Entry label={formatDate(prev.date)} texts={textsOf(prev, id)} />
                     </>
                   )}
                 </CardContent>
@@ -416,13 +462,21 @@ function Stat({ label, value }: { label: string; value: string }) {
   )
 }
 
-function Entry({ label, text, current }: { label: string; text?: string; current?: boolean }) {
+function Entry({ label, texts, current }: { label: string; texts: string[]; current?: boolean }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-2">
       <div>
         <Badge variant={current ? "default" : "secondary"}>{label}</Badge>
       </div>
-      <p className={text ? "leading-relaxed" : "text-muted-foreground"}>{text ?? "기록 없음"}</p>
+      {texts.length === 0 ? (
+        <p className="text-muted-foreground">기록 없음</p>
+      ) : (
+        texts.map((text, i) => (
+          <p key={i} className="leading-relaxed whitespace-pre-line">
+            {text}
+          </p>
+        ))
+      )}
     </div>
   )
 }
@@ -450,7 +504,7 @@ function RecordsScreen({
                 {show.title} · {formatDate(record.date)}
               </CardTitle>
               <CardDescription>
-                넘버 {record.entries.length}개 · {countChars(record).toLocaleString("ko-KR")}자
+                넘버 {countRecordedNumbers(record)}개 · {countChars(record).toLocaleString("ko-KR")}자
               </CardDescription>
             </CardHeader>
             <CardContent>

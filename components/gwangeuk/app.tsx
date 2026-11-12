@@ -49,6 +49,8 @@ import {
 import {
   formatDate,
   getShow,
+  groupByAct,
+  numberName,
   shows,
   WHOLE_SHOW,
   type AudienceReview,
@@ -77,7 +79,7 @@ function clueFor(show: Show, numberId: string, bookmarks: string[]): Clue {
 
 function numberLabel(show: Show, numberId: string) {
   const number = show.numbers.find((n) => n.id === numberId)
-  return number ? `${number.order}. ${number.title}` : "공연 전체"
+  return number ? numberName(number) : "공연 전체"
 }
 
 function filledNumbers(show: Show, store: StoreState) {
@@ -211,6 +213,10 @@ function ShowListScreen({ store, onOpen }: { store: StoreState; onOpen: (showId:
 
 /* ───────────── 탐색: 공연 상세 ───────────── */
 
+function ActHeading({ act }: { act: 1 | 2 }) {
+  return <h2 className="px-1 text-xl font-semibold">{act}막</h2>
+}
+
 function ReviewCard({ review, bookmarked }: { review: AudienceReview; bookmarked: boolean }) {
   return (
     <Card size="sm">
@@ -262,22 +268,27 @@ function ShowDetailScreen({ show, store, onWrite }: { show: Show; store: StoreSt
           </Button>
         </CardFooter>
       </Card>
-      {show.numbers.map((number) => {
-        const list = show.reviews.filter((review) => review.numberId === number.id)
-        return (
-          <section key={number.id} aria-labelledby={`explore-${number.id}`} className="flex flex-col gap-3">
-            <div className="flex flex-col gap-1 px-1">
-              <h2 id={`explore-${number.id}`} className="text-lg font-semibold">
-                {number.order}. {number.title}
-              </h2>
-              <p className="leading-relaxed text-muted-foreground">{number.scene}</p>
-            </div>
-            {list.map((review) => (
-              <ReviewCard key={review.id} review={review} bookmarked={store.bookmarks.includes(review.id)} />
-            ))}
-          </section>
-        )
-      })}
+      {groupByAct(show.numbers).map(({ act, numbers }) => (
+        <div key={act ?? "all"} className="flex flex-col gap-6">
+          {act && <ActHeading act={act} />}
+          {numbers.map((number) => {
+            const list = show.reviews.filter((review) => review.numberId === number.id)
+            return (
+              <section key={number.id} aria-labelledby={`explore-${number.id}`} className="flex flex-col gap-3">
+                <div className="flex flex-col gap-1 px-1">
+                  <h3 id={`explore-${number.id}`} className="text-lg font-semibold">
+                    {numberName(number)}
+                  </h3>
+                  <p className="leading-relaxed text-muted-foreground">{number.scene}</p>
+                </div>
+                {list.map((review) => (
+                  <ReviewCard key={review.id} review={review} bookmarked={store.bookmarks.includes(review.id)} />
+                ))}
+              </section>
+            )
+          })}
+        </div>
+      ))}
     </div>
   )
 }
@@ -348,7 +359,7 @@ function WriteScreen({
               <Card key={number.id}>
                 <CardHeader>
                   <CardTitle className="text-base font-semibold">
-                    {number.order}. {number.title}
+                    {numberName(number)}
                   </CardTitle>
                 </CardHeader>
                 <CardContent>
@@ -391,7 +402,7 @@ function WriteScreen({
                       <SelectItem value={WHOLE_SHOW}>공연 전체</SelectItem>
                       {show.numbers.map((number) => (
                         <SelectItem key={number.id} value={number.id}>
-                          {number.order}. {number.title}
+                          {numberName(number)}
                         </SelectItem>
                       ))}
                     </SelectContent>
@@ -417,24 +428,27 @@ function WriteScreen({
             </Button>
           </TabsContent>
 
-          <TabsContent value="numbers">
-            <Card>
-              <CardContent>
-                <ol className="flex flex-col gap-4">
-                  {show.numbers.map((number, index) => (
-                    <li key={number.id} className="flex flex-col gap-4">
-                      {index > 0 && <Separator />}
-                      <div className="flex flex-col gap-1">
-                        <h2 className="text-base font-semibold">
-                          {number.order}. {number.title}
-                        </h2>
-                        <p className="leading-relaxed text-muted-foreground">{number.scene}</p>
-                      </div>
-                    </li>
-                  ))}
-                </ol>
-              </CardContent>
-            </Card>
+          <TabsContent value="numbers" className="flex flex-col gap-6">
+            {groupByAct(show.numbers).map(({ act, numbers }) => (
+              <section key={act ?? "all"} className="flex flex-col gap-3">
+                {act && <ActHeading act={act} />}
+                <Card>
+                  <CardContent>
+                    <ol className="flex flex-col gap-4">
+                      {numbers.map((number, index) => (
+                        <li key={number.id} className="flex flex-col gap-4">
+                          {index > 0 && <Separator />}
+                          <div className="flex flex-col gap-1">
+                            <h3 className="text-base font-semibold">{numberName(number)}</h3>
+                            <p className="leading-relaxed text-muted-foreground">{number.scene}</p>
+                          </div>
+                        </li>
+                      ))}
+                    </ol>
+                  </CardContent>
+                </Card>
+              </section>
+            ))}
           </TabsContent>
         </Tabs>
       </div>
@@ -732,7 +746,7 @@ function BookmarksScreen({ store, onExplore }: { store: StoreState; onExplore: (
               .map((number) => (
                 <div key={number.id} className="flex flex-col gap-3">
                   <h3 className="px-1 text-base font-semibold text-muted-foreground">
-                    {number.order}. {number.title}
+                    {numberName(number)}
                   </h3>
                   {saved
                     .filter((review) => review.numberId === number.id)

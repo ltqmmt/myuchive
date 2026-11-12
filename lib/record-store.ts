@@ -68,6 +68,38 @@ function migrateV1(raw: string): StoreState {
   }
 }
 
+/** 엘리자벳 넘버를 1막·2막 전체 목록으로 바꾸기 전의 id를 새 id로 옮긴다. */
+const ELISABETH_IDS: Record<string, string> = {
+  "el-1": "el-1-0",
+  "el-2": "el-1-1",
+  "el-3": "el-1-2b",
+  "el-4": "el-1-7b",
+  "el-5": "el-1-8b",
+  "el-6": "el-2-1a",
+  "el-7": "el-1-9c",
+}
+
+function migrateElisabeth(s: StoreState): StoreState {
+  const map = (id: string) => ELISABETH_IDS[id] ?? id
+  const draft = s.drafts.elisabeth
+  return {
+    ...s,
+    records: s.records.map((r) =>
+      r.showId === "elisabeth" ? { ...r, entries: r.entries.map((e) => ({ ...e, numberId: map(e.numberId) })) } : r,
+    ),
+    drafts: draft
+      ? {
+          ...s.drafts,
+          elisabeth: {
+            ...draft,
+            texts: Object.fromEntries(Object.entries(draft.texts).map(([k, v]) => [map(k), v])),
+            custom: draft.custom.map((e) => ({ ...e, numberId: map(e.numberId) })),
+          },
+        }
+      : s.drafts,
+  }
+}
+
 function load() {
   if (loaded || typeof window === "undefined") return
   loaded = true
@@ -80,6 +112,7 @@ function load() {
         records: Array.isArray(saved.records) ? saved.records : initialState.records,
         drafts: saved.drafts && typeof saved.drafts === "object" ? saved.drafts : {},
       }
+      state = migrateElisabeth(state)
       return
     }
     const legacy = window.localStorage.getItem(LEGACY_KEY)

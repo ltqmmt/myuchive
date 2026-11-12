@@ -11,6 +11,7 @@ import { MobileAppShell, MobileScreenHeading, MobileToolbarButton } from "@/comp
 import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { SuccessMark } from "@/components/ui/success-mark"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   countChars,
   saveDraft,
@@ -178,6 +179,14 @@ function ExploreScreen({ store, onWrite }: { store: StoreState; onWrite: () => v
 
 /* ───────────── 작성 (Aha) ───────────── */
 
+type WriteTab = "bookmarks" | "numbers"
+
+function bookmarkedFor(numberId: string, bookmarks: string[]) {
+  return bookmarks
+    .map((id) => reviews.find((review) => review.id === id))
+    .find((review): review is AudienceReview => review?.numberId === numberId)
+}
+
 function WriteScreen({
   store,
   onClose,
@@ -189,6 +198,18 @@ function WriteScreen({
 }) {
   const filled = numbers.filter((n) => (store.draft.texts[n.id] ?? "").trim()).length
   const canSave = filled > 0
+  const bookmarkedNumbers = numbers.filter((n) => bookmarkedFor(n.id, store.bookmarks))
+  const [writeTab, setWriteTab] = useState<WriteTab>(bookmarkedNumbers.length > 0 ? "bookmarks" : "numbers")
+
+  const field = (number: (typeof numbers)[number], clue: Clue) => (
+    <ClueField
+      label={`${number.title} 기록`}
+      clue={clue}
+      value={store.draft.texts[number.id] ?? ""}
+      onFocus={startDraft}
+      onChange={(text) => setDraftText(number.id, text)}
+    />
+  )
 
   return (
     <MobileAppShell
@@ -217,25 +238,61 @@ function WriteScreen({
           </div>
           <Progress value={(filled / numbers.length) * 100} aria-label={`${numbers.length}개 넘버 중 ${filled}개 기록`} />
         </div>
-        {numbers.map((number) => (
-          <Card key={number.id}>
-            <CardHeader>
-              <CardTitle className="text-base font-semibold">
-                {number.order}. {number.title}
-              </CardTitle>
-              <CardDescription className="leading-relaxed">{number.scene}</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <ClueField
-                label={`${number.title} 기록`}
-                clue={clueFor(number.id, store.bookmarks)}
-                value={store.draft.texts[number.id] ?? ""}
-                onFocus={startDraft}
-                onChange={(text) => setDraftText(number.id, text)}
-              />
-            </CardContent>
-          </Card>
-        ))}
+
+        <Tabs value={writeTab} onValueChange={(value) => setWriteTab(value as WriteTab)} className="gap-6">
+          <TabsList sizing="fill">
+            <TabsTrigger value="bookmarks">북마크한 후기</TabsTrigger>
+            <TabsTrigger value="numbers">실제 목차/넘버</TabsTrigger>
+          </TabsList>
+
+          <TabsContent value="bookmarks" className="flex flex-col gap-6">
+            {bookmarkedNumbers.length === 0 ? (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base font-semibold">북마크한 후기가 없어요</CardTitle>
+                  <CardDescription className="leading-relaxed">
+                    실제 목차/넘버에서 장면 설명과 AI 모의 후기를 보며 기록할 수 있어요.
+                  </CardDescription>
+                </CardHeader>
+                <CardFooter>
+                  <Button className="w-full" onClick={() => setWriteTab("numbers")}>
+                    목차/넘버 보기
+                  </Button>
+                </CardFooter>
+              </Card>
+            ) : (
+              bookmarkedNumbers.map((number) => {
+                const review = bookmarkedFor(number.id, store.bookmarks)!
+                return (
+                  <Card key={number.id}>
+                    <CardHeader>
+                      <CardTitle className="text-base font-semibold">
+                        {number.order}. {number.title}
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent>
+                      {field(number, { kind: "bookmark", text: review.body, author: review.author })}
+                    </CardContent>
+                  </Card>
+                )
+              })
+            )}
+          </TabsContent>
+
+          <TabsContent value="numbers" className="flex flex-col gap-6">
+            {numbers.map((number) => (
+              <Card key={number.id}>
+                <CardHeader>
+                  <CardTitle className="text-base font-semibold">
+                    {number.order}. {number.title}
+                  </CardTitle>
+                  <CardDescription className="leading-relaxed">{number.scene}</CardDescription>
+                </CardHeader>
+                <CardContent>{field(number, { kind: "ai", text: number.aiReview })}</CardContent>
+              </Card>
+            ))}
+          </TabsContent>
+        </Tabs>
       </div>
     </MobileAppShell>
   )

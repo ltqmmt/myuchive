@@ -16,6 +16,8 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog"
 import { Badge } from "@/components/ui/badge"
+import { Calendar } from "@/components/ui/calendar"
+import { LikeButton } from "@/components/ui/like-button"
 import { Button } from "@/components/ui/button"
 import { Card, CardAction, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -30,6 +32,7 @@ import { Separator } from "@/components/ui/separator"
 import { SuccessMark } from "@/components/ui/success-mark"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group"
 import {
   addCustomEntry,
   countChars,
@@ -39,19 +42,36 @@ import {
   draftOf,
   removeCustomEntry,
   saveDraft,
+  setDraftPerformance,
   setDraftText,
   startDraft,
   toggleBookmark,
+  toggleLike,
   updateCustomEntry,
   useRecordStore,
   type StoreState,
 } from "@/lib/record-store"
+import {
+  defaultPerformance,
+  findPerformance,
+  formatPerformance,
+  isPast,
+  pairLabel,
+  pairShort,
+  performanceForReview,
+  performancesOf,
+  performancesOn,
+  RUN,
+  toIso,
+  type Performance,
+} from "@/lib/schedule"
 import {
   formatDate,
   getShow,
   groupByAct,
   numberName,
   shows,
+  TODAY,
   WHOLE_SHOW,
   type AudienceReview,
   type Show,
@@ -149,7 +169,15 @@ export function GwangeukApp() {
     >
       {tab === "explore" &&
         (exploreShow ? (
-          <ShowDetailScreen show={exploreShow} store={store} onWrite={() => openWrite(exploreShow.id)} />
+          <ShowDetailScreen
+            key={exploreShow.id}
+            show={exploreShow}
+            store={store}
+            onWrite={(performanceId) => {
+              setDraftPerformance(exploreShow.id, performanceId)
+              openWrite(exploreShow.id)
+            }}
+          />
         ) : (
           <ShowListScreen store={store} onOpen={setExploreShowId} />
         ))}
@@ -195,7 +223,7 @@ function ShowListScreen({ store, onOpen }: { store: StoreState; onOpen: (showId:
                 <span className="flex flex-col gap-1">
                   <span className="text-lg font-semibold">{show.title}</span>
                   <span className="font-normal text-muted-foreground">
-                    {show.todayLabel} · {show.venue}
+                    {formatDate(RUN.start)} ~ {formatDate(RUN.end)} · {show.venue}
                   </span>
                   <span className="font-normal text-muted-foreground">
                     후기 {show.reviews.length}개{saved > 0 && ` · 북마크 ${saved}개`}
@@ -217,13 +245,54 @@ function ActHeading({ act }: { act: 1 | 2 }) {
   return <h2 className="px-1 text-xl font-semibold">{act}막</h2>
 }
 
-function ReviewCard({ review, bookmarked }: { review: AudienceReview; bookmarked: boolean }) {
+type SortKey = "likes" | "bookmarks" | "recent"
+
+function reviewCounts(review: AudienceReview, store: StoreState) {
+  return {
+    liked: store.likes.includes(review.id),
+    bookmarked: store.bookmarks.includes(review.id),
+    likes: review.likes + (store.likes.includes(review.id) ? 1 : 0),
+    bookmarks: review.bookmarks + (store.bookmarks.includes(review.id) ? 1 : 0),
+  }
+}
+
+function sortReviews(list: AudienceReview[], key: SortKey, store: StoreState) {
+  const watched = (r: AudienceReview) => r.watchedOn.replace(".", "")
+  return [...list].sort((a, b) => {
+    if (key === "recent") return watched(b).localeCompare(watched(a))
+    return reviewCounts(b, store)[key] - reviewCounts(a, store)[key]
+  })
+}
+
+function ReviewCard({ review, show, store }: { review: AudienceReview; show: Show; store: StoreState }) {
+  const { liked, bookmarked, likes, bookmarks } = reviewCounts(review, store)
+  const performance = performanceForReview(show, review.watchedOn)
   return (
     <Card size="sm">
       <CardHeader>
         <CardTitle className="text-base font-medium">{review.author}</CardTitle>
-        <CardDescription>{review.watchedOn} 관람</CardDescription>
-        <CardAction>
+        <CardDescription>
+          {review.watchedOn} 관람{performance && ` · ${pairShort(performance)}`}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <p className="leading-relaxed">{review.body}</p>
+      </CardContent>
+      <CardFooter className="gap-4 pt-0 pb-2">
+        <div className="flex items-center">
+          <LikeButton
+            key={String(liked)}
+            defaultLiked={liked}
+            label={`${review.author}님의 후기 좋아요`}
+            unlikeLabel={`${review.author}님의 후기 좋아요 취소`}
+            onLikedChange={() => toggleLike(review.id)}
+          />
+          <span className="text-muted-foreground tabular-nums">
+            <span className="sr-only">좋아요 </span>
+            {likes.toLocaleString("ko-KR")}
+          </span>
+        </div>
+        <div className="flex items-center gap-1">
           <Button
             variant="ghost"
             size="icon"
@@ -234,59 +303,193 @@ function ReviewCard({ review, bookmarked }: { review: AudienceReview; bookmarked
           >
             <Bookmark strokeWidth={2} fill={bookmarked ? "currentColor" : "none"} aria-hidden />
           </Button>
-        </CardAction>
-      </CardHeader>
-      <CardContent>
-        <p className="leading-relaxed">{review.body}</p>
-      </CardContent>
+          <span className="text-muted-foreground tabular-nums">
+            <span className="sr-only">북마크 </span>
+            {bookmarks.toLocaleString("ko-KR")}
+          </span>
+        </div>
+      </CardFooter>
     </Card>
   )
 }
 
-function ShowDetailScreen({ show, store, onWrite }: { show: Show; store: StoreState; onWrite: () => void }) {
-  const draftCount = filledNumbers(show, store)
-  const hasDraft = draftHasText(draftOf(store, show.id))
+function toDate(iso: string) {
+  const [y, m, d] = iso.split("-").map(Number)
+  return new Date(y, m - 1, d)
+}
+
+function ScheduleCard({
+  show,
+  store,
+  performance,
+  onSelect,
+  onWrite,
+}: {
+  show: Show
+  store: StoreState
+  performance: Performance
+  onSelect: (p: Performance) => void
+  onWrite: () => void
+}) {
+  const sameDay = performancesOn(show, performance.date)
+  const playDates = new Set(performancesOf(show).map((p) => p.date))
+  const draft = draftOf(store, show.id)
+  const hasDraft = draftHasText(draft) && draft.performanceId === performance.id
+  const past = isPast(performance)
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-lg font-semibold">{show.title}</CardTitle>
+        <CardDescription>
+          {show.venue} · 후기 {show.reviews.length}개
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex flex-col gap-5">
+        <div className="flex justify-center">
+          <Calendar
+            selected={toDate(performance.date)}
+            today={toDate(TODAY)}
+            disabled={(date) => !playDates.has(toIso(date))}
+            onSelect={(date) => {
+              if (!date) return
+              const list = performancesOn(show, toIso(date))
+              if (list.length) onSelect(list[list.length - 1])
+            }}
+          />
+        </div>
+        <Separator />
+        <div className="flex flex-col gap-3">
+          <p className="font-semibold">{formatPerformance(performance).replace(/ \d{2}:\d{2}$/, "")}</p>
+          <ToggleGroup
+            type="single"
+            variant="outline"
+            value={performance.id}
+            onValueChange={(id) => {
+              const next = sameDay.find((p) => p.id === id)
+              if (next) onSelect(next)
+            }}
+            aria-label="공연 시간"
+          >
+            {sameDay.map((p) => (
+              <ToggleGroupItem key={p.id} value={p.id}>
+                {p.time}
+              </ToggleGroupItem>
+            ))}
+          </ToggleGroup>
+          {performance.pair.length > 0 && (
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1">
+              {performance.pair.map((x) => (
+                <div key={x.role} className="contents">
+                  <dt className="text-muted-foreground">{x.role}</dt>
+                  <dd className="font-medium">{x.actor}</dd>
+                </div>
+              ))}
+            </dl>
+          )}
+        </div>
+      </CardContent>
+      <CardFooter>
+        <Button className="w-full" disabled={!past} onClick={onWrite}>
+          <PenLine data-icon="inline-start" strokeWidth={2} aria-hidden />
+          {!past
+            ? "관람 후 기록할 수 있어요"
+            : hasDraft
+              ? `이어서 기록하기 (${filledNumbers(show, store)}/${show.numbers.length})`
+              : "이 공연 기록하기"}
+        </Button>
+      </CardFooter>
+    </Card>
+  )
+}
+
+const REVIEW_PREVIEW = 2
+
+function NumberReviews({
+  number,
+  show,
+  store,
+  sort,
+}: {
+  number: Show["numbers"][number]
+  show: Show
+  store: StoreState
+  sort: SortKey
+}) {
+  const [expanded, setExpanded] = useState(false)
+  const list = sortReviews(
+    show.reviews.filter((review) => review.numberId === number.id),
+    sort,
+    store,
+  )
+  const visible = expanded ? list : list.slice(0, REVIEW_PREVIEW)
+  const hidden = list.length - REVIEW_PREVIEW
+  return (
+    <section aria-labelledby={`explore-${number.id}`} className="flex flex-col gap-3">
+      <div className="flex flex-col gap-1 px-1">
+        <h3 id={`explore-${number.id}`} className="text-lg font-semibold">
+          {numberName(number)}
+        </h3>
+        <p className="leading-relaxed text-muted-foreground">{number.scene}</p>
+      </div>
+      {visible.map((review) => (
+        <ReviewCard key={review.id} review={review} show={show} store={store} />
+      ))}
+      {hidden > 0 && (
+        <Button variant="ghost" className="self-center" aria-expanded={expanded} onClick={() => setExpanded(!expanded)}>
+          {expanded ? "접기" : `후기 ${hidden}개 더 보기`}
+        </Button>
+      )}
+    </section>
+  )
+}
+
+function ShowDetailScreen({
+  show,
+  store,
+  onWrite,
+}: {
+  show: Show
+  store: StoreState
+  onWrite: (performanceId: string) => void
+}) {
+  const draft = draftOf(store, show.id)
+  const [performance, setPerformance] = useState<Performance>(
+    () => findPerformance(show, draft.performanceId) ?? defaultPerformance(show),
+  )
+  const [sort, setSort] = useState<SortKey>("likes")
+
   return (
     <div className="flex flex-col gap-6 pt-2 pb-6 break-keep">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-lg font-semibold">{show.title}</CardTitle>
-          <CardDescription>
-            {show.todayLabel} · {show.venue}
-            {show.cast && (
-              <>
-                <br />
-                {show.cast}
-              </>
-            )}
-          </CardDescription>
-        </CardHeader>
-        <CardFooter>
-          <Button className="w-full" onClick={onWrite}>
-            <PenLine data-icon="inline-start" strokeWidth={2} aria-hidden />
-            {hasDraft ? `이어서 기록하기 (${draftCount}/${show.numbers.length})` : "오늘 공연 기록하기"}
-          </Button>
-        </CardFooter>
-      </Card>
+      <ScheduleCard
+        show={show}
+        store={store}
+        performance={performance}
+        onSelect={setPerformance}
+        onWrite={() => onWrite(performance.id)}
+      />
+
+      <div className="flex flex-col gap-3 px-1">
+        <h2 className="text-xl font-semibold">넘버별 후기</h2>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          value={sort}
+          onValueChange={(value) => value && setSort(value as SortKey)}
+          aria-label="후기 정렬"
+        >
+          <ToggleGroupItem value="likes">좋아요순</ToggleGroupItem>
+          <ToggleGroupItem value="bookmarks">북마크순</ToggleGroupItem>
+          <ToggleGroupItem value="recent">최신순</ToggleGroupItem>
+        </ToggleGroup>
+      </div>
+
       {groupByAct(show.numbers).map(({ act, numbers }) => (
         <div key={act ?? "all"} className="flex flex-col gap-6">
           {act && <ActHeading act={act} />}
-          {numbers.map((number) => {
-            const list = show.reviews.filter((review) => review.numberId === number.id)
-            return (
-              <section key={number.id} aria-labelledby={`explore-${number.id}`} className="flex flex-col gap-3">
-                <div className="flex flex-col gap-1 px-1">
-                  <h3 id={`explore-${number.id}`} className="text-lg font-semibold">
-                    {numberName(number)}
-                  </h3>
-                  <p className="leading-relaxed text-muted-foreground">{number.scene}</p>
-                </div>
-                {list.map((review) => (
-                  <ReviewCard key={review.id} review={review} bookmarked={store.bookmarks.includes(review.id)} />
-                ))}
-              </section>
-            )
-          })}
+          {numbers.map((number) => (
+            <NumberReviews key={number.id} number={number} show={show} store={store} sort={sort} />
+          ))}
         </div>
       ))}
     </div>
@@ -309,6 +512,7 @@ function WriteScreen({
   onSaved: (recordId: string) => void
 }) {
   const draft = draftOf(store, show.id)
+  const performance = findPerformance(show, draft.performanceId)
   const filled = filledNumbers(show, store)
   const canSave = draftHasText(draft)
   const bookmarkedNumbers = show.numbers.filter((n) => bookmarkedFor(show, n.id, store.bookmarks))
@@ -340,7 +544,15 @@ function WriteScreen({
         <div className="flex flex-col gap-3 px-1">
           <div>
             <h1 className="text-xl font-semibold">{show.title}</h1>
-            <p className="text-muted-foreground">{show.todayLabel}</p>
+            <p className="text-muted-foreground">
+              {performance ? formatPerformance(performance) : show.todayLabel}
+              {performance && performance.pair.length > 0 && (
+                <>
+                  <br />
+                  {pairLabel(performance)}
+                </>
+              )}
+            </p>
           </div>
           <Progress
             value={(filled / show.numbers.length) * 100}
@@ -549,7 +761,9 @@ function ResultScreen({
         {justSaved && (
           <div className="flex flex-col items-center gap-4 pt-4 text-center">
             <SuccessMark label="저장 완료" />
-            <MobileScreenHeading className="text-center">오늘의 순간을 남겼어요</MobileScreenHeading>
+            <MobileScreenHeading className="text-center">
+              {record.date === TODAY ? "오늘의 순간을 남겼어요" : "그날의 순간을 남겼어요"}
+            </MobileScreenHeading>
           </div>
         )}
 
@@ -557,6 +771,7 @@ function ResultScreen({
           <CardHeader>
             <CardTitle className="text-base font-semibold">
               {show.title} · {formatDate(record.date)}
+              {record.time && ` ${record.time}`}
             </CardTitle>
             {record.cast && <CardDescription>{record.cast}</CardDescription>}
           </CardHeader>
@@ -674,8 +889,15 @@ function RecordsScreen({
                 <CardHeader>
                   <CardTitle className="text-base font-semibold">
                     {show.title} · {formatDate(record.date)}
+                    {record.time && ` ${record.time}`}
                   </CardTitle>
                   <CardDescription>
+                    {record.cast && (
+                      <>
+                        {record.cast}
+                        <br />
+                      </>
+                    )}
                     넘버 {countRecordedNumbers(record)}개 · {countChars(record).toLocaleString("ko-KR")}자
                   </CardDescription>
                   <CardAction>
@@ -751,7 +973,7 @@ function BookmarksScreen({ store, onExplore }: { store: StoreState; onExplore: (
                   {saved
                     .filter((review) => review.numberId === number.id)
                     .map((review) => (
-                      <ReviewCard key={review.id} review={review} bookmarked />
+                      <ReviewCard key={review.id} review={review} show={show} store={store} />
                     ))}
                 </div>
               ))}

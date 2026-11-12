@@ -2,6 +2,7 @@
 
 import { useSyncExternalStore } from "react"
 
+import { findPerformance, pairLabel } from "@/lib/schedule"
 import { getShow, seedRecords, TODAY, type RecordEntry, type ShowRecord } from "@/lib/show-data"
 
 export type CustomEntry = {
@@ -14,10 +15,14 @@ export type Draft = {
   texts: Record<string, string>
   custom: CustomEntry[]
   startedAt: number | null
+  /** 기록 중인 회차 (공연 일정의 performance id) */
+  performanceId?: string
 }
 
 export type StoreState = {
   bookmarks: string[]
+  /** 내가 좋아요한 후기 id */
+  likes: string[]
   records: ShowRecord[]
   /** 공연별 작성 중인 기록 */
   drafts: Record<string, Draft>
@@ -30,6 +35,7 @@ export const emptyDraft: Draft = { texts: {}, custom: [], startedAt: null }
 
 const initialState: StoreState = {
   bookmarks: [],
+  likes: [],
   records: seedRecords,
   drafts: {},
 }
@@ -55,6 +61,7 @@ function migrateV1(raw: string): StoreState {
   const draft = v1.draft
   return {
     bookmarks: (v1.bookmarks ?? []).map(rev),
+    likes: [],
     records,
     drafts: draft
       ? {
@@ -109,6 +116,7 @@ function load() {
       const saved = JSON.parse(raw) as Partial<StoreState>
       state = {
         bookmarks: Array.isArray(saved.bookmarks) ? saved.bookmarks : initialState.bookmarks,
+        likes: Array.isArray(saved.likes) ? saved.likes : [],
         records: Array.isArray(saved.records) ? saved.records : initialState.records,
         drafts: saved.drafts && typeof saved.drafts === "object" ? saved.drafts : {},
       }
@@ -170,6 +178,16 @@ export function toggleBookmark(reviewId: string) {
   })
 }
 
+export function toggleLike(reviewId: string) {
+  const has = state.likes.includes(reviewId)
+  setState({ ...state, likes: has ? state.likes.filter((id) => id !== reviewId) : [...state.likes, reviewId] })
+}
+
+export function setDraftPerformance(showId: string, performanceId: string) {
+  if (draftOf(state, showId).performanceId === performanceId) return
+  updateDraft(showId, (d) => ({ ...d, performanceId }))
+}
+
 export function startDraft(showId: string) {
   if (draftOf(state, showId).startedAt != null) return
   updateDraft(showId, (d) => ({ ...d, startedAt: Date.now() }))
@@ -208,11 +226,13 @@ export function saveDraft(showId: string, clueFor: (numberId: string) => RecordE
     .filter((entry) => entry.text.length > 0)
   entries.push(...own)
   const startedAt = draft.startedAt ?? Date.now()
+  const performance = findPerformance(show, draft.performanceId)
   const record: ShowRecord = {
     id: `rec-${Date.now()}`,
     showId,
-    date: TODAY,
-    cast: show.cast,
+    date: performance?.date ?? TODAY,
+    time: performance?.time,
+    cast: performance ? pairLabel(performance) : show.cast,
     entries,
     durationSec: Math.max(1, Math.round((Date.now() - startedAt) / 1000)),
   }

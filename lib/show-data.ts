@@ -1,3 +1,5 @@
+import { extraReviewRows } from "@/lib/review-data"
+
 export type MusicalNumber = {
   id: string
   order: number
@@ -15,9 +17,17 @@ export type AudienceReview = {
   id: string
   numberId: string
   author: string
+  /** 관람일 MM.DD */
   watchedOn: string
   body: string
+  /** 다른 관객들이 누른 좋아요·북마크 수 (예시 값) */
+  likes: number
+  bookmarks: number
 }
+
+type ReviewSeed = Omit<AudienceReview, "likes" | "bookmarks">
+
+type ShowSeed = Omit<Show, "reviews"> & { reviews: ReviewSeed[] }
 
 export type Show = {
   id: string
@@ -45,6 +55,8 @@ export type ShowRecord = {
   id: string
   showId: string
   date: string
+  /** 관람한 회차 시간 HH:MM */
+  time?: string
   cast?: string
   entries: RecordEntry[]
   durationSec: number
@@ -54,7 +66,7 @@ export const TODAY = "2026-11-12"
 
 /* 모든 공연 데이터(넘버 구성, 장면 설명, 관객 후기, AI 모의 후기)는 화면 확인용 예시입니다. */
 
-const winterGarden: Show = {
+const winterGarden: ShowSeed = {
   id: "winter-garden",
   title: "겨울 정원",
   venue: "달빛아트홀",
@@ -113,20 +125,20 @@ const winterGarden: Show = {
   reviews: [
     { id: "wg-r1", numberId: "wg-1", author: "겨울관객", watchedOn: "11.08", body: "화분 닦을 때 입김이 보이도록 조명을 낮춘 게 좋았다. 오른쪽 세 번째 화분만 끝까지 안 닦는데, 그게 형의 화분이라는 걸 나중에 알았다." },
     { id: "wg-r2", numberId: "wg-1", author: "온실지기", watchedOn: "11.05", body: "서곡 첫 음이 첼로 솔로로 시작해서 눈 떨어지는 속도랑 박자가 맞는다. 처음 보는 분들은 눈 내리는 타이밍을 꼭 보세요." },
-    { id: "wg-r3", numberId: "wg-2", author: "2층C열", watchedOn: "11.09", body: "\"올해도 봄은 늦겠지\" 하고 창문 닫으려다 멈추는 손. 오늘 이서진 배우는 창틀에 이마를 잠깐 대고 있다가 노래를 시작했다." },
+    { id: "wg-r3", numberId: "wg-2", author: "2층C열", watchedOn: "11.11", body: "\"올해도 봄은 늦겠지\" 하고 창문 닫으려다 멈추는 손. 오늘 이서진 배우는 창틀에 이마를 잠깐 대고 있다가 노래를 시작했다." },
     { id: "wg-r4", numberId: "wg-2", author: "봄을기다림", watchedOn: "11.06", body: "솔로 2절에서 '아무도'를 반 박자 늦게 부르는데 회차마다 길이가 다르다. 오늘은 거의 한 마디를 쉬었다." },
-    { id: "wg-r5", numberId: "wg-3", author: "편지는두번", watchedOn: "11.09", body: "편지 마지막 줄 '창문은 열어둬'를 해온은 읽기만 하고 도윤만 노래한다. 그다음 해온이 2막 내내 창문을 열어두는 게 이 장면 때문." },
+    { id: "wg-r5", numberId: "wg-3", author: "편지는두번", watchedOn: "11.11", body: "편지 마지막 줄 '창문은 열어둬'를 해온은 읽기만 하고 도윤만 노래한다. 그다음 해온이 2막 내내 창문을 열어두는 게 이 장면 때문." },
     { id: "wg-r6", numberId: "wg-3", author: "겨울관객", watchedOn: "11.08", body: "조명이 갈라질 때 무대 바닥에 선이 그어지는데, 도윤이 그 선을 한 번 밟으려다 물러난다. 놓치기 쉬운 동작." },
     { id: "wg-r7", numberId: "wg-4", author: "온실지기", watchedOn: "11.05", body: "눈 맞추는 마지막 소절에서 둘 다 숨을 같이 쉰다. 마이크로 들릴 만큼 크게. 오늘은 박건우 배우가 먼저 웃었다." },
-    { id: "wg-r8", numberId: "wg-4", author: "2층C열", watchedOn: "11.09", body: "2층에서 보면 둘이 서 있는 자리가 정확히 대칭이고, 바닥 조명이 계절 색으로 나뉜다. 왼쪽 겨울, 오른쪽 가을." },
+    { id: "wg-r8", numberId: "wg-4", author: "2층C열", watchedOn: "11.11", body: "2층에서 보면 둘이 서 있는 자리가 정확히 대칭이고, 바닥 조명이 계절 색으로 나뉜다. 왼쪽 겨울, 오른쪽 가을." },
     { id: "wg-r9", numberId: "wg-5", author: "봄을기다림", watchedOn: "11.06", body: "유리 깨지는 소리 다음 반 초 정적, 그리고 눈이 쏟아진다. 고음은 눈이 다 떨어질 때까지 버티는 게 연출 의도라고." },
-    { id: "wg-r10", numberId: "wg-6", author: "편지는두번", watchedOn: "11.09", body: "새싹 조명이 켜지기 전 3초 암전 동안 도윤의 허밍이 아주 작게 들린다. 앞쪽 자리에서만 들리는 듯." },
+    { id: "wg-r10", numberId: "wg-6", author: "편지는두번", watchedOn: "11.11", body: "새싹 조명이 켜지기 전 3초 암전 동안 도윤의 허밍이 아주 작게 들린다. 앞쪽 자리에서만 들리는 듯." },
   ],
 }
 
 // 넘버 구성(한국 공연 기준 1막·2막 넘버 제목과 번호): 한국어 위키백과 「엘리자벳 (뮤지컬)」 (CC BY-SA 4.0)
 // 장면 설명은 같은 문서의 줄거리를 바탕으로 새로 요약한 것이고, 관객 후기와 AI 모의 후기는 예시 문장이다.
-const elisabeth: Show = {
+const elisabeth: ShowSeed = {
   id: "elisabeth",
   title: "엘리자벳",
   venue: "블루스퀘어 우리은행홀",
@@ -549,19 +561,19 @@ const elisabeth: Show = {
   ],
   reviews: [
     { id: "el-r1", numberId: "el-1-0", author: "합스부르크", watchedOn: "11.07", body: "프롤로그에서 인물들이 일어나는 순서가 회차마다 조금 다르다. 오늘은 루케니 목소리가 유난히 거칠어서 시작부터 긴장됐다." },
-    { id: "el-r2", numberId: "el-1-2b", author: "토드의그림자", watchedOn: "11.09", body: "죽음이 처음 등장할 때 엘리자벳 쪽으로 손을 뻗다가 거두는 동작이 있다. 이 손짓이 마지막 장면에서 다시 나온다." },
+    { id: "el-r2", numberId: "el-1-2b", author: "토드의그림자", watchedOn: "11.11", body: "죽음이 처음 등장할 때 엘리자벳 쪽으로 손을 뻗다가 거두는 동작이 있다. 이 손짓이 마지막 장면에서 다시 나온다." },
     { id: "el-r3", numberId: "el-1-7b", author: "빈의밤", watchedOn: "11.05", body: "무도회 장면에서 다른 인물들이 멈추고 두 사람만 움직이는 순간이 있는데, 그때 바닥 조명 색이 바뀐다." },
     { id: "el-r4", numberId: "el-1-15", author: "합스부르크", watchedOn: "11.07", body: "1막 마지막 넘버. 마지막 음을 끌 때 무대 뒤 거울에 비친 모습까지 보이도록 각도가 잡혀 있다." },
     { id: "el-r5", numberId: "el-2-1a", author: "3층의자", watchedOn: "11.10", body: "키치 할 때 객석 통로까지 내려온다. 통로석이면 기념품 받는 연기에 같이 참여하게 될 수도." },
     { id: "el-r6", numberId: "el-1-8b", author: "빈의밤", watchedOn: "11.05", body: "1막에서 가장 기다리는 넘버. 노래 중간 숨 고르는 구간에서 객석이 같이 숨을 참는 게 느껴진다." },
-    { id: "el-r7", numberId: "el-2-2", author: "토드의그림자", watchedOn: "11.09", body: "두 사람이 무대 양쪽에서 시작해 점점 가까워지는 동선. 마지막에 엘리자벳이 먼저 등을 돌린다." },
+    { id: "el-r7", numberId: "el-2-2", author: "토드의그림자", watchedOn: "11.11", body: "두 사람이 무대 양쪽에서 시작해 점점 가까워지는 동선. 마지막에 엘리자벳이 먼저 등을 돌린다." },
     { id: "el-r8", numberId: "el-2-11b", author: "3층의자", watchedOn: "11.10", body: "루돌프가 손을 내밀 때 엘리자벳이 반 박자 늦게 고개를 돌린다. 그 반 박자가 이 장면의 전부." },
     { id: "el-r9", numberId: "el-2-13", author: "합스부르크", watchedOn: "11.07", body: "추도곡에서 조명이 관 하나만 남기고 전부 꺼진다. 2막에서 가장 조용한데 가장 크게 울린다." },
     { id: "el-r10", numberId: "el-2-16b", author: "빈의밤", watchedOn: "11.05", body: "마지막 장면은 1층보다 2층에서 볼 때 무대 바닥 조명 모양이 더 잘 보인다." },
   ],
 }
 
-const deathNote: Show = {
+const deathNote: ShowSeed = {
   id: "death-note",
   title: "데스노트",
   venue: "예시 공연장 B",
@@ -611,12 +623,12 @@ const deathNote: Show = {
   reviews: [
     { id: "dn-r1", numberId: "dn-2", author: "사과는류크", watchedOn: "11.08", body: "노트를 처음 읽을 때 무대 뒤 스크린에 규칙이 한 줄씩 떠오른다. 2층에서 보면 글자가 더 잘 보인다." },
     { id: "dn-r2", numberId: "dn-3", author: "단것좋아", watchedOn: "11.06", body: "L이 의자 위에 웅크린 자세를 넘버 내내 유지한다. 손가락으로 무릎을 두드리는 박자가 반주랑 맞는다." },
-    { id: "dn-r3", numberId: "dn-4", author: "코트사이드", watchedOn: "11.09", body: "테니스 장면은 조명이 공 역할을 한다. 공이 넘어갈 때마다 빛이 반대편으로 옮겨가니 시선 따라가 보세요." },
+    { id: "dn-r3", numberId: "dn-4", author: "코트사이드", watchedOn: "11.11", body: "테니스 장면은 조명이 공 역할을 한다. 공이 넘어갈 때마다 빛이 반대편으로 옮겨가니 시선 따라가 보세요." },
     { id: "dn-r4", numberId: "dn-5", author: "사과는류크", watchedOn: "11.08", body: "마지막 장면에서 류크가 노트에 뭔가를 적는 소리가 마이크로 크게 들린다. 그 소리가 끝이다." },
   ],
 }
 
-const sweeneyTodd: Show = {
+const sweeneyTodd: ShowSeed = {
   id: "sweeney-todd",
   title: "스위니토드",
   venue: "예시 공연장 C",
@@ -673,13 +685,36 @@ const sweeneyTodd: Show = {
   ],
   reviews: [
     { id: "st-r1", numberId: "st-1", author: "플리트가", watchedOn: "11.06", body: "발라드 마지막에 호루라기 같은 날카로운 소리가 울리는데, 이 소리가 극 중 장면 전환마다 반복된다." },
-    { id: "st-r2", numberId: "st-2", author: "파이한조각", watchedOn: "11.09", body: "반죽을 실제로 치대고 밀가루가 객석 앞줄까지 날린다. 오늘은 바퀴벌레 잡는 동작을 두 번 했다." },
+    { id: "st-r2", numberId: "st-2", author: "파이한조각", watchedOn: "11.11", body: "반죽을 실제로 치대고 밀가루가 객석 앞줄까지 날린다. 오늘은 바퀴벌레 잡는 동작을 두 번 했다." },
     { id: "st-r3", numberId: "st-4", author: "이발소2층", watchedOn: "11.10", body: "에피파니 때 토드가 객석 쪽으로 걸어 나와 앞줄 관객을 한 명씩 본다. 1층 앞쪽이면 눈 마주칠 각오를." },
-    { id: "st-r4", numberId: "st-5", author: "파이한조각", watchedOn: "11.09", body: "직업별 파이 농담을 주고받을 때 애드리브가 매 회차 다르다. 오늘은 관객 웃음 때문에 한 번 멈췄다." },
+    { id: "st-r4", numberId: "st-5", author: "파이한조각", watchedOn: "11.11", body: "직업별 파이 농담을 주고받을 때 애드리브가 매 회차 다르다. 오늘은 관객 웃음 때문에 한 번 멈췄다." },
   ],
 }
 
-export const shows: Show[] = [winterGarden, elisabeth, deathNote, sweeneyTodd]
+function hash(text: string) {
+  let h = 2166136261
+  for (let i = 0; i < text.length; i++) h = Math.imul(h ^ text.charCodeAt(i), 16777619)
+  return h >>> 0
+}
+
+/** 예시 후기를 합치고, 좋아요·북마크 수 예시 값을 붙인다. */
+function build(seed: ShowSeed): Show {
+  const extra: ReviewSeed[] = (extraReviewRows[seed.id] ?? []).map(([numberId, author, watchedOn, body], i) => ({
+    id: `${seed.id}-x${i + 1}`,
+    numberId,
+    author,
+    watchedOn,
+    body,
+  }))
+  const reviews = [...seed.reviews, ...extra].map((r) => {
+    const h = hash(r.id)
+    const likes = 4 + (h % 236)
+    return { ...r, likes, bookmarks: 1 + Math.floor(((h >>> 8) % 100) / 100 * likes * 0.45) }
+  })
+  return { ...seed, reviews }
+}
+
+export const shows: Show[] = [winterGarden, elisabeth, deathNote, sweeneyTodd].map(build)
 
 export function numberName(number: MusicalNumber) {
   return `${number.code ?? number.order}. ${number.title}`

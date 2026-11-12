@@ -245,7 +245,7 @@ function ActHeading({ act }: { act: 1 | 2 }) {
   return <h2 className="px-1 text-xl font-semibold">{act}막</h2>
 }
 
-type SortKey = "likes" | "bookmarks" | "recent"
+type SortKey = "number" | "likes" | "bookmarks" | "recent"
 
 function reviewCounts(review: AudienceReview, store: StoreState) {
   return {
@@ -256,19 +256,43 @@ function reviewCounts(review: AudienceReview, store: StoreState) {
   }
 }
 
+/**
+ * likes/bookmarks: 많은 순, recent: 최근 관람일 순(같은 날이면 나중에 등록된 후기 먼저),
+ * number: 넘버 안에서는 좋아요 많은 순.
+ */
 function sortReviews(list: AudienceReview[], key: SortKey, store: StoreState) {
   const watched = (r: AudienceReview) => r.watchedOn.replace(".", "")
+  const order = new Map(list.map((r, i) => [r.id, i]))
   return [...list].sort((a, b) => {
-    if (key === "recent") return watched(b).localeCompare(watched(a))
-    return reviewCounts(b, store)[key] - reviewCounts(a, store)[key]
+    if (key === "recent")
+      return watched(b).localeCompare(watched(a)) || order.get(b.id)! - order.get(a.id)!
+    const field = key === "bookmarks" ? "bookmarks" : "likes"
+    return reviewCounts(b, store)[field] - reviewCounts(a, store)[field]
   })
 }
 
-function ReviewCard({ review, show, store }: { review: AudienceReview; show: Show; store: StoreState }) {
+function ReviewCard({
+  review,
+  show,
+  store,
+  showNumber,
+}: {
+  review: AudienceReview
+  show: Show
+  store: StoreState
+  /** 넘버 구분 없이 나열할 때 어느 넘버의 후기인지 보여준다 */
+  showNumber?: boolean
+}) {
   const { liked, bookmarked, likes, bookmarks } = reviewCounts(review, store)
   const performance = performanceForReview(show, review.watchedOn)
+  const number = showNumber ? show.numbers.find((n) => n.id === review.numberId) : undefined
   return (
     <Card size="sm">
+      {number && (
+        <div className="px-(--card-spacing)">
+          <Badge variant="secondary">{numberName(number)}</Badge>
+        </div>
+      )}
       <CardHeader>
         <CardTitle className="text-base font-medium">{review.author}</CardTitle>
         <CardDescription>
@@ -405,21 +429,44 @@ function ScheduleCard({
 
 const REVIEW_PREVIEW = 2
 
+const FLAT_PAGE = 10
+
+/** 넘버 구분 없이 정렬 기준대로 모든 후기를 나열한다. */
+function FlatReviews({ show, store, sort }: { show: Show; store: StoreState; sort: SortKey }) {
+  const [count, setCount] = useState(FLAT_PAGE)
+  const list = sortReviews(show.reviews, sort, store)
+  const rest = list.length - count
+  return (
+    <ol className="flex flex-col gap-3" aria-label="후기 목록">
+      {list.slice(0, count).map((review) => (
+        <li key={review.id}>
+          <ReviewCard review={review} show={show} store={store} showNumber />
+        </li>
+      ))}
+      {rest > 0 && (
+        <li className="flex justify-center">
+          <Button variant="ghost" onClick={() => setCount(count + FLAT_PAGE)}>
+            후기 {Math.min(rest, FLAT_PAGE)}개 더 보기 ({count}/{list.length})
+          </Button>
+        </li>
+      )}
+    </ol>
+  )
+}
+
 function NumberReviews({
   number,
   show,
   store,
-  sort,
 }: {
   number: Show["numbers"][number]
   show: Show
   store: StoreState
-  sort: SortKey
 }) {
   const [expanded, setExpanded] = useState(false)
   const list = sortReviews(
     show.reviews.filter((review) => review.numberId === number.id),
-    sort,
+    "likes",
     store,
   )
   const visible = expanded ? list : list.slice(0, REVIEW_PREVIEW)
@@ -457,7 +504,7 @@ function ShowDetailScreen({
   const [performance, setPerformance] = useState<Performance>(
     () => findPerformance(show, draft.performanceId) ?? defaultPerformance(show),
   )
-  const [sort, setSort] = useState<SortKey>("likes")
+  const [sort, setSort] = useState<SortKey>("number")
 
   return (
     <div className="flex flex-col gap-6 pt-2 pb-6 break-keep">
@@ -470,28 +517,34 @@ function ShowDetailScreen({
       />
 
       <div className="flex flex-col gap-3 px-1">
-        <h2 className="text-xl font-semibold">넘버별 후기</h2>
+        <h2 className="text-xl font-semibold">관객 후기</h2>
         <ToggleGroup
           type="single"
           variant="outline"
           value={sort}
           onValueChange={(value) => value && setSort(value as SortKey)}
           aria-label="후기 정렬"
+          className="flex-wrap"
         >
+          <ToggleGroupItem value="number">넘버순</ToggleGroupItem>
           <ToggleGroupItem value="likes">좋아요순</ToggleGroupItem>
           <ToggleGroupItem value="bookmarks">북마크순</ToggleGroupItem>
           <ToggleGroupItem value="recent">최신순</ToggleGroupItem>
         </ToggleGroup>
       </div>
 
-      {groupByAct(show.numbers).map(({ act, numbers }) => (
-        <div key={act ?? "all"} className="flex flex-col gap-6">
-          {act && <ActHeading act={act} />}
-          {numbers.map((number) => (
-            <NumberReviews key={number.id} number={number} show={show} store={store} sort={sort} />
-          ))}
-        </div>
-      ))}
+      {sort === "number" ? (
+        groupByAct(show.numbers).map(({ act, numbers }) => (
+          <div key={act ?? "all"} className="flex flex-col gap-6">
+            {act && <ActHeading act={act} />}
+            {numbers.map((number) => (
+              <NumberReviews key={number.id} number={number} show={show} store={store} />
+            ))}
+          </div>
+        ))
+      ) : (
+        <FlatReviews key={sort} show={show} store={store} sort={sort} />
+      )}
     </div>
   )
 }
